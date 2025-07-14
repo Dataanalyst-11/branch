@@ -1,0 +1,213 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🚚 Pending Invoices Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fff8f0;
+      padding: 20px;
+      margin: 0;
+      font-size: 1.2em;
+    }
+    h1 {
+      background: #38db06;
+      color: white;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+      margin: 0;
+      font-size: 2em;
+    }
+    #invoiceCount {
+      text-align: center;
+      font-size: 1.3em;
+      margin-top: 12px;
+      font-weight: bold;
+      color: #333333;
+    }
+    #scrollArea {
+      max-height: 88vh;
+      overflow-y: auto;
+      margin-top: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      font-size: 1em;
+    }
+    th, td {
+      padding: 14px;
+      border: 1px solid #ccc;
+      text-align: left;
+      vertical-align: top;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background-color: #f7f7f7;
+      z-index: 10;
+    }
+    tr.highlight-green { background-color: #006400; color: white; font-weight: bold; }
+    tr.highlight-red { background-color: #8B0000; color: white; font-weight: bold; }
+    .timer-label {
+      font-size: 0.85em;
+      color: #f0f0f0;
+      display: block;
+      margin-top: 6px;
+    }
+    .timer {
+      font-size: 1em;
+      display: block;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <h1>🚚 BEIBORA DELIVERY TRACKER 🏍️</h1>
+  <div id="invoiceCount">Loading...</div>
+  <div id="scrollArea">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Invoice Number</th>
+          <th scope="col">Rider</th>
+          <th scope="col">Main Route</th>
+          <th scope="col">Dispatched Time</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+  const API_URL = 'https://script.google.com/macros/s/AKfycbzQxNWn9pl8mNw-BPh4tgk8rLnl64KOW99cJ-YlwYgtqr24W5R4JkAqOjpSz9ySueMiPQ/exec';
+  const liveTimers = {};
+
+  function formatDateTime(dateStr) {
+    const date = new Date(dateStr);
+    if (isNaN(date)) return dateStr;
+    const pad = n => n.toString().padStart(2, '0');
+    return `${pad(date.getMonth()+1)}/${pad(date.getDate())}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }
+
+  function parseDate(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return new Date(0);
+    const [datePart, timePart] = dateStr.trim().split(' ');
+    if (!datePart || !timePart) return new Date(0);
+    const [month, day, year] = datePart.split('/').map(Number);
+    const [hour, minute, second] = timePart.split(':').map(Number);
+    return new Date(year, month - 1, day, hour, minute, second || 0);
+  }
+
+  function formatDuration(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const hrs = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    return hrs > 0 ? `${hrs}h ${mins}m ${secs}s` : `${mins}m ${secs}s`;
+  }
+
+  async function fetchData() {
+    try {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = '';
+      Object.keys(liveTimers).forEach(key => clearInterval(liveTimers[key]));
+      Object.keys(liveTimers).forEach(key => delete liveTimers[key]);
+
+      let pendingCount = 0, deliveredCount = 0, clearedCount = 0;
+
+      const filtered = data.filter(row => {
+        const deliveredBy = row["Delivered By"]?.trim().toUpperCase();
+        return deliveredBy && !["C/WAITING", "CN"].includes(deliveredBy);
+      });
+
+      filtered.forEach(row => {
+        if (row.STATUS === "PENDING") pendingCount++;
+        if (row.STATUS === "CLEARED") clearedCount++;
+        deliveredCount++;
+      });
+
+      const rowsToDisplay = filtered
+        .filter(row => row.STATUS === 'PENDING')
+        .sort((a, b) => parseDate(a["DISPATCHED TIME"]) - parseDate(b["DISPATCHED TIME"]));
+
+      rowsToDisplay.forEach(row => {
+        const dispatchTime = row["DISPATCHED TIME"];
+        const dispatchedDate = parseDate(dispatchTime);
+        if (!dispatchedDate || isNaN(dispatchedDate)) return;
+
+        const minsPassed = (new Date() - dispatchedDate) / (1000 * 60);
+        const tr = document.createElement('tr');
+        tr.className = minsPassed >= 60 ? 'highlight-red' : 'highlight-green';
+
+        const invoiceId = (row["INVOICE NO"] || '').replace(/\s/g, '');
+        const timerId = `timer-${invoiceId}`;
+
+        tr.innerHTML = ` 
+          <td>${row["INVOICE NO"] || ''}</td>
+          <td>${row["Delivered By"] || ''}</td>
+          <td>${row["RIDERS ROUTE"] || ''}</td>
+          <td>
+            ${formatDateTime(dispatchTime)}
+            <span class="timer-label">⏱ Elapsed Time Since Dispatch</span>
+            <span class="timer" id="${timerId}">⏱ Calculating...</span>
+          </td>
+        `;
+
+        tbody.appendChild(tr);
+
+        // Setup live timer for this row
+        const updateTimer = () => {
+          const now = new Date();
+          const elapsed = now - dispatchedDate;
+          const timerEl = document.getElementById(timerId);
+          if (timerEl) {
+            timerEl.textContent = `⏱ ${formatDuration(elapsed)}`;
+          }
+        };
+
+        updateTimer();
+        liveTimers[invoiceId] = setInterval(updateTimer, 1000);
+      });
+
+      document.getElementById('invoiceCount').innerHTML = 
+        `✅ Total Cleared: ${clearedCount} &nbsp;&nbsp;&nbsp;
+         📦 Total Delivered: ${deliveredCount} &nbsp;&nbsp;&nbsp;
+         🔴 Total Pending: ${pendingCount}`;
+    } catch (err) {
+      console.error(err);
+      document.getElementById('invoiceCount').textContent = '⚠️ Failed to fetch data.';
+    }
+  }
+
+  fetchData();
+  setInterval(fetchData, 30000);
+
+  const scrollArea = document.getElementById('scrollArea');
+  let scrollPosition = 0;
+  let scrollDirection = 1;
+
+  setInterval(() => {
+    const maxScroll = scrollArea.scrollHeight - scrollArea.clientHeight;
+    scrollPosition += scrollDirection * 3;
+    if (scrollPosition >= maxScroll) {
+      scrollPosition = maxScroll;
+      scrollDirection = -1;
+    } else if (scrollPosition <= 0) {
+      scrollPosition = 0;
+      scrollDirection = 1;
+    }
+    scrollArea.scrollTop = scrollPosition;
+  }, 20);
+</script>
+
+
+</body>
+</html>
