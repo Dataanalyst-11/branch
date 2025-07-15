@@ -66,6 +66,16 @@
       font-size: 0.85em;
       color: #f0f0f0;
     }
+    button {
+      margin-top: 10px;
+      padding: 8px 16px;
+      font-size: 1em;
+      background-color: #17a2b8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -73,6 +83,9 @@
   <div id="invoiceCount">Loading invoice count...</div>
   <div id="speechStatus" style="text-align: center; margin-top: 5px; font-size: 0.9em; color: #666;">
     🔊 Click anywhere to enable speech announcements
+  </div>
+  <div style="text-align:center;">
+    <button onclick="speakInvoiceNumber('1234')">🔈 Test Invoice Speech</button>
   </div>
 
   <div id="scrollArea">
@@ -118,19 +131,30 @@
 
     function enableSpeech() {
       speechEnabled = true;
-      console.log('Speech enabled');
       document.getElementById('speechStatus').textContent = '🔊 Speech announcements enabled';
       document.getElementById('speechStatus').style.color = '#28a745';
 
+      // Resume audio context (needed on iOS)
+      if (typeof AudioContext !== 'undefined') {
+        try {
+          const ctx = new AudioContext();
+          ctx.resume();
+        } catch (e) {
+          console.warn('AudioContext resume failed:', e);
+        }
+      }
+
+      // Test announcement
       const testMessage = 'Speech system activated';
       if (typeof FullyKiosk !== 'undefined') {
         FullyKiosk.textToSpeech(testMessage, false);
       } else if ('speechSynthesis' in window) {
-        const testUtterance = new SpeechSynthesisUtterance(testMessage);
-        testUtterance.rate = 0.8;
-        testUtterance.pitch = 1.0;
-        testUtterance.volume = 1.0;
-        speechSynthesis.speak(testUtterance);
+        const utterance = new SpeechSynthesisUtterance(testMessage);
+        utterance.rate = 0.8;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utterance);
       }
     }
 
@@ -142,26 +166,24 @@
 
       const message = `Invoice ${invoiceNumber} has entered confirmation`;
 
+      // Fully Kiosk TTS
       if (typeof FullyKiosk !== 'undefined' && FullyKiosk.textToSpeech) {
         try {
           FullyKiosk.textToSpeech(message, false);
-          console.log('FullyKiosk TTS used:', message);
           return;
         } catch (err) {
           console.warn('FullyKiosk TTS failed:', err);
         }
       }
 
-      if ('speechSynthesis' in window) {
+      // Browser TTS
+      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
         try {
-          speechSynthesis.cancel();
           const utterance = new SpeechSynthesisUtterance(message);
           utterance.rate = 0.8;
-          utterance.pitch = 1.0;
-          utterance.volume = 1.0;
-          utterance.onstart = () => console.log('Speech started:', invoiceNumber);
-          utterance.onend = () => console.log('Speech ended:', invoiceNumber);
-          utterance.onerror = (e) => console.error('Speech error:', e);
+          utterance.pitch = 1;
+          utterance.volume = 1;
+          speechSynthesis.cancel();
           speechSynthesis.speak(utterance);
         } catch (err) {
           console.error('Browser TTS failed:', err);
