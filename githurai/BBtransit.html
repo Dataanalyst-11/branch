@@ -3,82 +3,65 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Invoices on Transit</title>
+  <title>In Confirmation - Invoice Dashboard</title>
   <style>
-    * {
-      box-sizing: border-box;
-    }
-
     body {
       font-family: Arial, sans-serif;
-      background: #fefefe;
+      background: #f0faff;
+      padding: 20px;
       margin: 0;
-      height: 100vh;
-      overflow: hidden;
     }
-
     h1 {
       background: #17a2b8;
       color: white;
       padding: 12px;
-      margin: 0;
+      border-radius: 8px;
       text-align: center;
-      position: sticky;
-      top: 0;
-      z-index: 100;
+      margin: 0;
     }
-
     #invoiceCount {
       text-align: center;
-      font-size: 1.1em;
+      font-size: 1.2em;
+      margin-top: 10px;
       font-weight: bold;
-      color: #17a2b8;
-      margin: 5px 0 0 0;
+      color: #333;
     }
-
-    .table-container {
-      height: calc(100vh - 60px);
+    #scrollArea {
+      max-height: 90vh;
       overflow-y: auto;
-      padding: 20px;
+      margin-top: 20px;
     }
-
     table {
       width: 100%;
       border-collapse: collapse;
       background: white;
     }
-
     th, td {
       padding: 10px;
       border: 1px solid #ddd;
       text-align: left;
     }
-
     thead th {
-      background-color: #f1f1f1;
       position: sticky;
       top: 0;
-      z-index: 50;
+      background-color: #f7f7f7;
+      z-index: 10;
     }
-
     tr.highlight-green {
       background-color: #006400;
       color: white;
       font-weight: bold;
     }
-
     tr.highlight-yellow {
       background-color: #FFD700;
       color: black;
       font-weight: bold;
     }
-
     tr.highlight-red {
       background-color: #8B0000;
       color: white;
       font-weight: bold;
     }
-
     small {
       font-size: 0.85em;
       color: #f0f0f0;
@@ -86,14 +69,19 @@
   </style>
 </head>
 <body>
-  <h1>⚙️ BEIBORA Invoices on Transit 📦</h1>
-  <div id="invoiceCount">🔢 Total Invoices on Transit: calculating...</div>
-      <div class="table-container" id="scrollArea">
+  <h1>🔵 In Confirmation Invoices</h1>
+  <div id="invoiceCount">Loading invoice count...</div>
+  <div id="speechStatus" style="text-align: center; margin-top: 5px; font-size: 0.9em; color: #666;">
+    🔊 Click anywhere to enable speech announcements
+  </div>
+
+  <div id="scrollArea">
     <table>
       <thead>
         <tr>
           <th>Invoice Number</th>
-          <th>Store Time Out</th>
+          <th>Confirmation Time In</th>
+          <th>Confirmation Executive</th>
           <th>Customer Name</th>
           <th>Route</th>
         </tr>
@@ -103,11 +91,19 @@
   </div>
 
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzQxNWn9pl8mNw-BPh4tgk8rLnl64KOW99cJ-YlwYgtqr24W5R4JkAqOjpSz9ySueMiPQ/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxZGkZtHB2ViVBuLfheOkWEfLg_KemtgPTewtYfM65m8vDmcl09dbu1Rwn6T280iVFSQA/exec';
     const liveTimers = {};
+    let previousInvoices = new Set();
+    let speechEnabled = false;
+
+    function minutesPassedSince(dateStr) {
+      const now = new Date();
+      const past = new Date(dateStr);
+      return (now - past) / (1000 * 60);
+    }
 
     function formatDateTime(input) {
-      const date = parseDDMMYYYY(input);
+      const date = new Date(input);
       if (isNaN(date.getTime())) return input;
       const pad = n => n.toString().padStart(2, '0');
       return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
@@ -115,53 +111,83 @@
 
     function formatDuration(ms) {
       const totalSec = Math.floor(ms / 1000);
-      const hours = Math.floor(totalSec / 3600);
-      const minutes = Math.floor((totalSec % 3600) / 60 );
+      const minutes = Math.floor(totalSec / 60);
       const seconds = totalSec % 60;
-      if (hours > 0) {
-        return `${hours} hr ${minutes} min ${seconds} sec`;
-      } else {
-        return `${minutes} min ${seconds} sec`;
+      return `${minutes} min ${seconds} sec`;
+    }
+
+    function enableSpeech() {
+      speechEnabled = true;
+      console.log('Speech enabled');
+      document.getElementById('speechStatus').textContent = '🔊 Speech announcements enabled';
+      document.getElementById('speechStatus').style.color = '#28a745';
+      
+      // Test speech to ensure it works
+      if ('speechSynthesis' in window) {
+        const testUtterance = new SpeechSynthesisUtterance('Speech system activated');
+        testUtterance.rate = 0.8;
+        testUtterance.pitch = 1.0;
+        testUtterance.volume = 1.0;
+        speechSynthesis.speak(testUtterance);
       }
     }
-    function parseDDMMYYYY(dateStr) {
-      const [datePart, timePart] = dateStr.split(' ');
-      if (!datePart || !timePart) return new Date('Invalid');
-      const [day, month, year] = datePart.split('/').map(Number);
-      const [hour, minute, second] = timePart.split(':').map(Number);
-      return new Date(year, month - 1, day, hour, minute, second);
+
+    function speakInvoiceNumber(invoiceNumber) {
+      if (!speechEnabled) {
+        console.log('Speech not enabled yet, skipping announcement');
+        return;
+      }
+
+      if ('speechSynthesis' in window) {
+        // Cancel any ongoing speech
+        speechSynthesis.cancel();
+        
+        // Wait a bit then speak
+        setTimeout(() => {
+          const utterance = new SpeechSynthesisUtterance(`Invoice ${invoiceNumber} has entered confirmation`);
+          utterance.rate = 0.8;
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+          
+          utterance.onstart = () => console.log('Speech started for invoice:', invoiceNumber);
+          utterance.onend = () => console.log('Speech ended for invoice:', invoiceNumber);
+          utterance.onerror = (e) => console.error('Speech error:', e);
+          
+          speechSynthesis.speak(utterance);
+        }, 100);
+      } else {
+        console.warn('Speech synthesis not supported in this browser');
+      }
     }
-    
+
     async function fetchData() {
       try {
         const res = await fetch(API_URL);
         const data = await res.json();
         const tbody = document.getElementById('table-body');
-        const invoiceCountElem = document.getElementById('invoiceCount');
-
-        tbody.innerHTML = '';
-        Object.keys(liveTimers).forEach(key => delete liveTimers[key]);
-
+        tbody.innerHTML = ''; // Clear existing rows
         let invoiceCount = 0;
 
-        data.reverse().forEach(row => {
+        data.sort((a, b) => new Date(b["CONFIRMATION TIME IN"]) - new Date(a["CONFIRMATION TIME IN"])); // newest first
+
+        const currentInvoices = new Set();
+
+        data.forEach(row => {
           const storeOut = row["Store Time Out"];
           const confirmIn = row["CONFIRMATION TIME IN"];
+          const confirmOut = row["CONFIRMATION TIME OUT"];
           const invoice = row["INVOICE NUMBER"] || '';
 
-          if (storeOut && !confirmIn) {
-            invoiceCount++;
-            const timeOut = parseDDMMYYYY(storeOut);
-            const now = new Date();
-            const minutesPassed = (now - timeOut) / (1000 * 60);
+          if (storeOut && confirmIn && !confirmOut) {
+            const minutesPassed = minutesPassedSince(confirmIn);
+            const formattedTime = formatDateTime(confirmIn);
             const invoiceId = invoice.replace(/\s/g, '');
             const timerId = `timer-${invoiceId}`;
-
             const tr = document.createElement('tr');
 
-            if (minutesPassed > 10) {
+            if (minutesPassed > 20) {
               tr.classList.add('highlight-red');
-            } else if (minutesPassed > 5) {
+            } else if (minutesPassed > 10) {
               tr.classList.add('highlight-yellow');
             } else {
               tr.classList.add('highlight-green');
@@ -170,77 +196,90 @@
             tr.innerHTML = `
               <td>${invoice}</td>
               <td>
-                ${formatDateTime(storeOut)}<br>
-                <small id="${timerId}">⏱️ In Transit for: calculating...</small>
+                ${formattedTime}
+                <br>
+                <small id="${timerId}">⏱️ In Confirmation for: calculating...</small>
               </td>
+              <td>${row["CONFIRMATION EXECUTIVE"] || ''}</td>
               <td>${row["CUSTOMER NAME"] || ''}</td>
               <td>${row["ROUTE"] || ''}</td>
             `;
 
             tbody.appendChild(tr);
-            liveTimers[invoiceId] = timeOut;
+            liveTimers[invoiceId] = new Date(confirmIn);
+            currentInvoices.add(invoice);
+            invoiceCount++;
+
+            // Check if this is a new invoice (not in previous set)
+            if (!previousInvoices.has(invoice)) {
+              speakInvoiceNumber(invoice);
+            }
           }
         });
 
-        invoiceCountElem.textContent = `🔢 Total Invoices on Transit: ${invoiceCount}`;
+        // Update previous invoices set for next comparison
+        previousInvoices = currentInvoices;
+
+        document.getElementById('invoiceCount').textContent = `🔢 Total Invoices in Confirmation: ${invoiceCount}`;
+
       } catch (err) {
-        console.error('Fetch error:', err);
+        console.error('Fetch failed:', err);
+        document.getElementById('invoiceCount').textContent = `⚠️ Failed to load invoices.`;
       }
     }
 
-    fetchData();
-    setInterval(fetchData, 30000);
-
+    // Update countdown timers every second
     setInterval(() => {
       const now = new Date();
       for (const [invoiceId, startTime] of Object.entries(liveTimers)) {
         const timerElem = document.getElementById(`timer-${invoiceId}`);
         if (timerElem) {
           const elapsed = now - startTime;
-          timerElem.textContent = `⏱️ In Transit for: ${formatDuration(elapsed)}`;
+          timerElem.textContent = `⏱️ In Confirmation for: ${formatDuration(elapsed)}`;
         }
       }
     }, 1000);
 
-    // Auto Scroll
+    // Smooth auto-scroll
     const scrollArea = document.getElementById('scrollArea');
     let direction = 'down';
-    let pausedUntil = 0;
 
     function smoothScroll() {
-      function step(now) {
-        const speed = 1;
-
-        if (now < pausedUntil) {
-          requestAnimationFrame(step);
-          return;
-        }
-
+      const speed = 1;
+      function step() {
         if (direction === 'down') {
-          if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight - 1) {
+          if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight) {
             scrollArea.scrollTop += speed;
+            requestAnimationFrame(step);
           } else {
             direction = 'up';
-            pausedUntil = now + 2000;
+            setTimeout(() => requestAnimationFrame(step), 2000);
           }
         } else {
           if (scrollArea.scrollTop > 0) {
             scrollArea.scrollTop -= speed;
+            requestAnimationFrame(step);
           } else {
             direction = 'down';
-            pausedUntil = now + 2000;
+            setTimeout(() => requestAnimationFrame(step), 15000);
           }
         }
-
-        requestAnimationFrame(step);
       }
-
-      requestAnimationFrame(step);
+      step();
     }
 
     window.addEventListener('load', () => {
-      setTimeout(() => smoothScroll(), 3000);
+      document.dispatchEvent(new Event('touchstart'));
+      setTimeout(() => requestAnimationFrame(smoothScroll), 15000);
     });
+
+    // Enable speech on user interaction
+    document.addEventListener('click', enableSpeech, { once: true });
+    document.addEventListener('touchstart', enableSpeech, { once: true });
+    document.addEventListener('keydown', enableSpeech, { once: true });
+
+    fetchData();
+    setInterval(fetchData, 15000); // Refresh every 15 seconds
   </script>
 </body>
 </html>
