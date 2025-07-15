@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>In Confirmation - Invoice Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0faff;
+      padding: 20px;
+      margin: 0;
+    }
+    h1 {
+      background: #17a2b8;
+      color: white;
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+      margin: 0;
+    }
+    #invoiceCount {
+      text-align: center;
+      font-size: 1.2em;
+      margin-top: 10px;
+      font-weight: bold;
+      color: #333;
+    }
+    #scrollArea {
+      max-height: 90vh;
+      overflow-y: auto;
+      margin-top: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background-color: #f7f7f7;
+      z-index: 10;
+    }
+    tr.highlight-green {
+      background-color: #006400;
+      color: white;
+      font-weight: bold;
+    }
+    tr.highlight-yellow {
+      background-color: #FFD700;
+      color: black;
+      font-weight: bold;
+    }
+    tr.highlight-red {
+      background-color: #8B0000;
+      color: white;
+      font-weight: bold;
+    }
+    small {
+      font-size: 0.85em;
+      color: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔵 In Confirmation Invoices</h1>
+  <div id="invoiceCount">Loading invoice count...</div>
+  <div id="speechStatus" style="text-align: center; margin-top: 5px; font-size: 0.9em; color: #666;">
+    🔊 Click anywhere to enable speech announcements
+  </div>
+
+  <div id="scrollArea">
+    <table>
+      <thead>
+        <tr>
+          <th>Invoice Number</th>
+          <th>Confirmation Time In</th>
+          <th>Confirmation Executive</th>
+          <th>Customer Name</th>
+          <th>Route</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxZGkZtHB2ViVBuLfheOkWEfLg_KemtgPTewtYfM65m8vDmcl09dbu1Rwn6T280iVFSQA/exec';
+    const liveTimers = {};
+    let previousInvoices = new Set();
+    let speechEnabled = false;
+
+    function minutesPassedSince(dateStr) {
+      const now = new Date();
+      const past = new Date(dateStr);
+      return (now - past) / (1000 * 60);
+    }
+
+    function formatDateTime(input) {
+      const date = new Date(input);
+      if (isNaN(date.getTime())) return input;
+      const pad = n => n.toString().padStart(2, '0');
+      return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function formatDuration(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSec / 60);
+      const seconds = totalSec % 60;
+      return `${minutes} min ${seconds} sec`;
+    }
+
+    function enableSpeech() {
+      speechEnabled = true;
+      console.log('Speech enabled');
+      document.getElementById('speechStatus').textContent = '🔊 Speech announcements enabled';
+      document.getElementById('speechStatus').style.color = '#28a745';
+
+      const testMessage = 'Speech system activated';
+      if (typeof FullyKiosk !== 'undefined') {
+        FullyKiosk.textToSpeech(testMessage, false);
+      } else if ('speechSynthesis' in window) {
+        const testUtterance = new SpeechSynthesisUtterance(testMessage);
+        testUtterance.rate = 0.8;
+        testUtterance.pitch = 1.0;
+        testUtterance.volume = 1.0;
+        speechSynthesis.speak(testUtterance);
+      }
+    }
+
+    function speakInvoiceNumber(invoiceNumber) {
+      if (!speechEnabled) {
+        console.log('Speech not enabled yet, skipping announcement');
+        return;
+      }
+
+      const message = `Invoice ${invoiceNumber} has entered confirmation`;
+
+      if (typeof FullyKiosk !== 'undefined' && FullyKiosk.textToSpeech) {
+        try {
+          FullyKiosk.textToSpeech(message, false);
+          console.log('FullyKiosk TTS used:', message);
+          return;
+        } catch (err) {
+          console.warn('FullyKiosk TTS failed:', err);
+        }
+      }
+
+      if ('speechSynthesis' in window) {
+        try {
+          speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(message);
+          utterance.rate = 0.8;
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+          utterance.onstart = () => console.log('Speech started:', invoiceNumber);
+          utterance.onend = () => console.log('Speech ended:', invoiceNumber);
+          utterance.onerror = (e) => console.error('Speech error:', e);
+          speechSynthesis.speak(utterance);
+        } catch (err) {
+          console.error('Browser TTS failed:', err);
+        }
+      } else {
+        console.warn('No speech support in this browser');
+      }
+    }
+
+    async function fetchData() {
+      try {
+        const res = await fetch(API_URL);
+        const data = await res.json();
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+        let invoiceCount = 0;
+        data.sort((a, b) => new Date(b["CONFIRMATION TIME IN"]) - new Date(a["CONFIRMATION TIME IN"]));
+        const currentInvoices = new Set();
+
+        data.forEach(row => {
+          const storeOut = row["Store Time Out"];
+          const confirmIn = row["CONFIRMATION TIME IN"];
+          const confirmOut = row["CONFIRMATION TIME OUT"];
+          const invoice = row["INVOICE NUMBER"] || '';
+
+          if (storeOut && confirmIn && !confirmOut) {
+            const minutesPassed = minutesPassedSince(confirmIn);
+            const formattedTime = formatDateTime(confirmIn);
+            const invoiceId = invoice.replace(/\s/g, '');
+            const timerId = `timer-${invoiceId}`;
+            const tr = document.createElement('tr');
+
+            if (minutesPassed > 20) {
+              tr.classList.add('highlight-red');
+            } else if (minutesPassed > 10) {
+              tr.classList.add('highlight-yellow');
+            } else {
+              tr.classList.add('highlight-green');
+            }
+
+            tr.innerHTML = `
+              <td>${invoice}</td>
+              <td>
+                ${formattedTime}
+                <br>
+                <small id="${timerId}">⏱️ In Confirmation for: calculating...</small>
+              </td>
+              <td>${row["CONFIRMATION EXECUTIVE"] || ''}</td>
+              <td>${row["CUSTOMER NAME"] || ''}</td>
+              <td>${row["ROUTE"] || ''}</td>
+            `;
+
+            tbody.appendChild(tr);
+            liveTimers[invoiceId] = new Date(confirmIn);
+            currentInvoices.add(invoice);
+            invoiceCount++;
+
+            if (!previousInvoices.has(invoice)) {
+              speakInvoiceNumber(invoice);
+            }
+          }
+        });
+
+        previousInvoices = currentInvoices;
+        document.getElementById('invoiceCount').textContent = `🔢 Total Invoices in Confirmation: ${invoiceCount}`;
+
+      } catch (err) {
+        console.error('Fetch failed:', err);
+        document.getElementById('invoiceCount').textContent = `⚠️ Failed to load invoices.`;
+      }
+    }
+
+    setInterval(() => {
+      const now = new Date();
+      for (const [invoiceId, startTime] of Object.entries(liveTimers)) {
+        const timerElem = document.getElementById(`timer-${invoiceId}`);
+        if (timerElem) {
+          const elapsed = now - startTime;
+          timerElem.textContent = `⏱️ In Confirmation for: ${formatDuration(elapsed)}`;
+        }
+      }
+    }, 1000);
+
+    const scrollArea = document.getElementById('scrollArea');
+    let direction = 'down';
+
+    function smoothScroll() {
+      const speed = 1;
+      function step() {
+        if (direction === 'down') {
+          if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight) {
+            scrollArea.scrollTop += speed;
+            requestAnimationFrame(step);
+          } else {
+            direction = 'up';
+            setTimeout(() => requestAnimationFrame(step), 2000);
+          }
+        } else {
+          if (scrollArea.scrollTop > 0) {
+            scrollArea.scrollTop -= speed;
+            requestAnimationFrame(step);
+          } else {
+            direction = 'down';
+            setTimeout(() => requestAnimationFrame(step), 15000);
+          }
+        }
+      }
+      step();
+    }
+
+    window.addEventListener('load', () => {
+      document.dispatchEvent(new Event('touchstart'));
+      setTimeout(() => requestAnimationFrame(smoothScroll), 15000);
+    });
+
+    document.addEventListener('click', enableSpeech, { once: true });
+    document.addEventListener('touchstart', enableSpeech, { once: true });
+    document.addEventListener('keydown', enableSpeech, { once: true });
+
+    fetchData();
+    setInterval(fetchData, 15000);
+  </script>
+</body>
+</html>
