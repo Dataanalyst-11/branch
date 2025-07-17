@@ -1,0 +1,150 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dispatch Summary Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .card {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card:hover {
+      transform: scale(1.03);
+      box-shadow: 0 8px 20px rgba(7, 15, 245, 0.813);
+    }
+    #scrollWrapper {
+      height: 90vh;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div class="bg-gradient-to-r from-pink-600 to-blue-600 text-white text-center py-6 shadow-lg sticky top-0 z-50">
+    <h1 class="text-3xl font-bold">GITHURAI RIDERS SUMMARY</h1>
+    <div class="mt-2 text-xl">
+      <span id="totalDelivered">Delivered Today: 0</span> |
+      <span id="totalPending">Pending Clearance: 0</span> |
+      <span id="currentDate"></span>
+    </div>
+  </div>
+
+  <div id="scrollWrapper">
+    <div id="riderGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Rider cards will be added here -->
+    </div>
+  </div>
+
+  <div class="text-center text-sm text-gray-500 pb-4" id="lastUpdated"></div>
+
+  <script>
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxQ4Ppc4lSQY-qeWLgRg3umSzX-LIo-0NiIREPddStgmCSlqEyvMop1pffGHtsjib_N/exec';
+
+    let scrollAnimationId = null; // Track the current scroll animation
+    let scrollDirection = 'down';
+    const scrollSpeed = 1.5;
+    const scrollPause = 3000;
+
+    async function fetchRiderData() {
+      try {
+        const res = await fetch(API_URL);
+        const fullData = await res.json();
+
+        const riderData = fullData
+          .filter(row =>
+            row["RIDER LIST"] &&
+            row["TOTAL NO. OF ORDERS DELIVERED TODAY"] !== undefined &&
+            row["NO. OF INVOICES PENDING CLEARANCE"] !== undefined
+          )
+          .map(row => ({
+            name: row["RIDER LIST"],
+            delivered: Number(row["TOTAL NO. OF ORDERS DELIVERED TODAY"]),
+            pending: Number(row["NO. OF INVOICES PENDING CLEARANCE"])
+          }));
+
+        renderDashboard(riderData);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+      }
+    }
+
+    function renderDashboard(riders) {
+      const riderGrid = document.getElementById('riderGrid');
+      riderGrid.innerHTML = '';
+
+      let totalDelivered = 0;
+      let totalPending = 0;
+
+      riders.forEach(rider => {
+        totalDelivered += rider.delivered;
+        totalPending += rider.pending;
+
+        const card = document.createElement('div');
+        const isGreen = rider.pending === 0;
+        card.className = `card rounded-2xl p-4 ${isGreen ? 'bg-green-600 border-green-600 text-black font-bold' : 'bg-pink-700 border-pink-700 text-white'} border-4`;
+
+        card.innerHTML = `
+          <h2 class="text-xl font-bold mb-2">${rider.name}</h2>
+          <p class="text-lg">✅ Delivered: <span class="font-bold">${rider.delivered}</span></p>
+          <p class="text-lg">🔴 Pending Clearance: <span class="font-bold">${rider.pending}</span></p>
+        `;
+
+        riderGrid.appendChild(card);
+      });
+
+      document.getElementById('totalDelivered').textContent = `Delivered Today: ${totalDelivered}`;
+      document.getElementById('totalPending').textContent = `Pending Clearance: ${totalPending}`;
+
+      const now = new Date();
+      document.getElementById('currentDate').textContent = `Date: ${now.toLocaleDateString()}`;
+      document.getElementById('lastUpdated').textContent = `Last Updated: ${now.toLocaleTimeString()}`;
+    }
+
+    function scrollStep() {
+      const scrollWrapper = document.getElementById('scrollWrapper');
+
+      if (scrollDirection === 'down') {
+        if (scrollWrapper.scrollTop + scrollWrapper.clientHeight < scrollWrapper.scrollHeight) {
+          scrollWrapper.scrollTop += scrollSpeed;
+          scrollAnimationId = requestAnimationFrame(scrollStep);
+        } else {
+          scrollDirection = 'up';
+          setTimeout(() => {
+            scrollAnimationId = requestAnimationFrame(scrollStep);
+          }, scrollPause);
+        }
+      } else {
+        if (scrollWrapper.scrollTop > 0) {
+          scrollWrapper.scrollTop -= scrollSpeed;
+          scrollAnimationId = requestAnimationFrame(scrollStep);
+        } else {
+          scrollDirection = 'down';
+          setTimeout(() => {
+            scrollAnimationId = requestAnimationFrame(scrollStep);
+          }, scrollPause);
+        }
+      }
+    }
+
+    function restartScroll() {
+      if (scrollAnimationId !== null) {
+        cancelAnimationFrame(scrollAnimationId); // Cancel previous animation
+      }
+      setTimeout(() => {
+        scrollAnimationId = requestAnimationFrame(scrollStep);
+      }, 2000); // 2 seconds delay to restart
+    }
+
+    window.addEventListener('load', () => {
+      fetchRiderData();
+      restartScroll();
+      setInterval(() => {
+        fetchRiderData();
+        restartScroll();
+      }, 15000); // Refresh data every 15 seconds
+    });
+  </script>
+</body>
+</html>

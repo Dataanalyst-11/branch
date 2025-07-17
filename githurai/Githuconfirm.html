@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Invoices in CONFIRMATION</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0faff;
+      padding: 20px;
+      margin: 0;
+    }
+    h1 {
+      background: #647cf3;
+      color: white;
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+      margin: 0;
+    }
+    #invoiceCount {
+      text-align: center;
+      font-size: 1.2em;
+      margin-top: 10px;
+      font-weight: bold;
+      color: #333;
+    }
+    #scrollArea {
+      max-height: 90vh;
+      overflow-y: auto;
+      margin-top: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background-color: #f7f7f7;
+      z-index: 10;
+    }
+    tr.highlight-green {
+      background-color: #006400;
+      color: white;
+      font-weight: bold;
+    }
+    tr.highlight-yellow {
+      background-color: #FFD700;
+      color: black;
+      font-weight: bold;
+    }
+    tr.highlight-red {
+      background-color: #8B0000;
+      color: white;
+      font-weight: bold;
+    }
+    small {
+      font-size: 0.85em;
+      color: inherit;
+    }
+  </style>
+</head>
+<body>
+  <h1>📠Invoices in Confirmation(GITHURAI)🎗️</h1>
+  <div id="invoiceCount">Loading invoice count...</div>
+
+  <div id="scrollArea">
+    <table>
+      <thead>
+        <tr>
+          <th>Invoice Number</th>
+          <th>Confirmation Time In</th>
+          <th>Confirmation Executive</th>
+          <th>Customer Name</th>
+          <th>Route</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+
+  <audio id="beep" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
+  <script>
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxQ4Ppc4lSQY-qeWLgRg3umSzX-LIo-0NiIREPddStgmCSlqEyvMop1pffGHtsjib_N/exec';
+    const liveTimers = {};
+
+    function parseConfirmationTime(timeStr) {
+      if (!timeStr) return null;
+      const today = new Date();
+      const datePart = today.toISOString().split('T')[0]; // "2025-06-30"
+      const combined = `${datePart} ${timeStr}`;
+      const parsed = new Date(combined);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function minutesPassedSince(timeStr) {
+      const past = parseConfirmationTime(timeStr);
+      if (!past) return 0;
+      return (Date.now() - past.getTime()) / 60000;
+    }
+
+    function formatDateTime(timeStr) {
+      const dt = parseConfirmationTime(timeStr);
+      if (!dt) return timeStr;
+      const pad = n => n.toString().padStart(2, '0');
+      const hours = dt.getHours();
+      const ampm = hours >= 12 ? 'pm' : 'am';
+      const displayHours = hours % 12 || 12;
+      return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()} ${pad(displayHours)}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())} ${ampm}`;
+    }
+
+    function formatDuration(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSec / 60);
+      const seconds = totalSec % 60;
+      return `${minutes} min ${seconds} sec`;
+    }
+
+    async function fetchData() {
+      try {
+        const res = await fetch(API_URL);
+        const data = await res.json();
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = ''; // Clear existing rows
+        let invoiceCount = 0;
+        const newInvoices = [];
+
+        data.sort((a, b) => new Date(b["CONFIRMATION TIME IN"]) - new Date(a["CONFIRMATION TIME IN"]));
+
+        data.forEach(row => {
+          const storeOut = row["Store Time Out"];
+          const confirmIn = row["CONFIRMATION TIME IN"];
+          const confirmOut = row["CONFIRMATION TIME OUT"];
+          const invoice = row["INVOICE NUMBER"] || '';
+
+          if (storeOut && confirmIn && !confirmOut) {
+            const confirmTime = parseConfirmationTime(confirmIn);
+            const minutesPassed = minutesPassedSince(confirmIn);
+            const formattedTime = formatDateTime(confirmIn);
+            const invoiceId = invoice.replace(/\s/g, '');
+            const timerId = `timer-${invoiceId}`;
+            const tr = document.createElement('tr');
+
+            if (minutesPassed > 20) {
+              tr.classList.add('highlight-red');
+            } else if (minutesPassed > 10) {
+              tr.classList.add('highlight-yellow');
+            } else {
+              tr.classList.add('highlight-green');
+            }
+
+            tr.innerHTML = `
+              <td>${invoice}</td>
+              <td>
+                ${formattedTime}
+                <br>
+                <small id="${timerId}">⏱️ In Confirmation for: calculating...</small>
+              </td>
+              <td>${row["CONFIRMATION EXECUTIVE"] || ''}</td>
+              <td>${row["CUSTOMER NAME"] || ''}</td>
+              <td>${row["ROUTE"] || ''}</td>
+            `;
+
+            tbody.appendChild(tr);
+            liveTimers[invoiceId] = confirmTime;
+            newInvoices.push(invoice);
+            invoiceCount++;
+          }
+        });
+
+        document.getElementById('invoiceCount').textContent = `🔢 Total Invoices in Confirmation: ${invoiceCount}`;
+
+        if (newInvoices.length > 0) {
+          const beep = document.getElementById('beep');
+          beep.play();
+        }
+
+      } catch (err) {
+        console.error('Fetch failed:', err);
+        document.getElementById('invoiceCount').textContent = `⚠️ Failed to load invoices.`;
+      }
+    }
+
+    setInterval(() => {
+      const now = new Date();
+      for (const [invoiceId, startTime] of Object.entries(liveTimers)) {
+        const timerElem = document.getElementById(`timer-${invoiceId}`);
+        if (timerElem && startTime) {
+          const elapsed = now - startTime;
+          timerElem.textContent = `⏱️ In Confirmation for: ${formatDuration(elapsed)}`;
+        }
+      }
+    }, 1000);
+
+    const scrollArea = document.getElementById('scrollArea');
+    let direction = 'down';
+
+    function smoothScroll() {
+      const speed = 1;
+      function step() {
+        if (direction === 'down') {
+          if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight) {
+            scrollArea.scrollTop += speed;
+            requestAnimationFrame(step);
+          } else {
+            direction = 'up';
+            setTimeout(() => requestAnimationFrame(smoothScroll), 2000);
+          }
+        } else {
+          if (scrollArea.scrollTop > 0) {
+            scrollArea.scrollTop -= speed;
+            requestAnimationFrame(step);
+          } else {
+            direction = 'down';
+            setTimeout(() => requestAnimationFrame(smoothScroll), 15000);
+          }
+        }
+      }
+      step();
+    }
+
+    window.addEventListener('load', () => {
+      document.dispatchEvent(new Event('touchstart'));
+      setTimeout(() => requestAnimationFrame(smoothScroll), 15000);
+    });
+
+    fetchData();
+    setInterval(fetchData, 15000); // Refresh every 15 seconds
+  </script>
+</body>
+</html>
