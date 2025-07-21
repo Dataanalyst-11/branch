@@ -119,11 +119,18 @@
     }
 
     function formatDuration(ms) {
-      const totalSec = Math.floor(ms / 1000);
-      const minutes = Math.floor(totalSec / 60);
-      const seconds = totalSec % 60;
-      return `${minutes} min ${seconds} sec`;
-    }
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+
+    if (hours > 0) {
+    return `${hours} hr ${minutes} min ${seconds} sec`;
+    } else {
+    return `${minutes} min ${seconds} sec`;
+  }
+}
+
 
     async function fetchData() {
       try {
