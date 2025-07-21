@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dispatch Area-Invoices</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #fefefe;
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    h1 {
+      background: #0068be94;
+      color: white;
+      padding: 12px;
+      margin: 0;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    #count-display {
+      text-align: center;
+      font-size: 1.2em;
+      font-weight: bold;
+      padding: 10px;
+      background: #ffe5e5;
+      color: #dc3545;
+      position: sticky;
+      top: 52px;
+      z-index: 99;
+    }
+
+    .table-container {
+      height: calc(100vh - 100px);
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+
+    thead th {
+      background-color: #f1f1f1;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    tr.highlight-green {
+      background-color: #006400;
+      color: white;
+      font-weight: bold;
+    }
+
+    tr.highlight-yellow {
+      background-color: #FFD700;
+      color: black;
+      font-weight: bold;
+    }
+
+    tr.highlight-red {
+      background-color: #8B0000;
+      color: white;
+      font-weight: bold;
+    }
+
+    small {
+      font-size: 0.85em;
+      color: inherit;
+    }
+  </style>
+</head>
+<body>
+  <h1>🚘Invoices at GITHURAI BEIBORA Dispatch Area🤖</h1>
+  <div id="count-display">Invoices at Dispatch: 0</div>
+
+  <div class="table-container" id="scrollArea">
+    <table>
+      <thead>
+        <tr>
+          <th>Invoice Number</th>
+          <th>Customer Name</th>
+          <th>Route</th>
+          <th>Confirmation Time Out</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyaTT7YsxkYE1W2kRK4Lz5d0rcWoVB5dwnAy-BVi5Jiryg2DgbckGEF_5XKznTVyu28/exec';
+    const liveTimers = {};
+
+    function parseTimeToDate(input) {
+      const parts = input.match(/(\d+):(\d+):(\d+)\s*(am|pm)/i);
+      if (parts) {
+        const now = new Date();
+        let hours = parseInt(parts[1], 10);
+        const minutes = parseInt(parts[2], 10);
+        const seconds = parseInt(parts[3], 10);
+        const period = parts[4].toLowerCase();
+
+        if (period === 'pm' && hours !== 12) hours += 12;
+        if (period === 'am' && hours === 12) hours = 0;
+
+        const date = new Date(now);
+        date.setHours(hours, minutes, seconds, 0);
+        return date;
+      }
+
+      const fallback = new Date(input);
+      return isNaN(fallback.getTime()) ? null : fallback;
+    }
+
+    function formatDateTime(input) {
+      let date = (input instanceof Date) ? input : parseTimeToDate(input);
+      if (!date || isNaN(date.getTime())) return input;
+
+      const pad = n => n.toString().padStart(2, '0');
+      return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function formatDuration(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const hours = Math.floor(totalSec / 3600);
+      const minutes = Math.floor((totalSec % 3600) / 60);
+      const seconds = totalSec % 60;
+
+      if (hours > 0) {
+        return `${hours} hr ${minutes} min ${seconds} sec`;
+      } else {
+        return `${minutes} min ${seconds} sec`;
+      }
+    }
+
+    async function fetchData() {
+      try {
+        const res = await fetch(API_URL);
+        const data = await res.json();
+        const tbody = document.getElementById('table-body');
+        const countDisplay = document.getElementById('count-display');
+
+        tbody.innerHTML = '';
+        Object.keys(liveTimers).forEach(key => delete liveTimers[key]);
+
+        let count = 0;
+
+        data.reverse().forEach(row => {
+          const confirmationOut = row["CONFIRMATION TIME OUT"];
+          const rider = row["Delivered By"] || row["RIDER"];
+          const invoice = row["INVOICE NUMBER"] || '';
+
+          if (confirmationOut && !rider) {
+            const timeOut = parseTimeToDate(confirmationOut);
+            if (!timeOut) return;
+
+            count++;
+            const now = new Date();
+            const minutesPassed = (now - timeOut) / (1000 * 60);
+            const invoiceId = invoice.replace(/\s/g, '');
+            const timerId = `timer-${invoiceId}`;
+
+            const tr = document.createElement('tr');
+
+            if (minutesPassed > 50) {
+              tr.classList.add('highlight-red');
+            } else if (minutesPassed > 25) {
+              tr.classList.add('highlight-yellow');
+            } else {
+              tr.classList.add('highlight-green');
+            }
+
+            tr.innerHTML = `
+              <td>${invoice}</td>
+              <td>${row["CUSTOMER NAME"] || ''}</td>
+              <td>${row["ROUTE"] || ''}</td>
+              <td>
+                ${formatDateTime(confirmationOut)}<br>
+                <small id="${timerId}">⏱️ Waiting Delivery: calculating...</small>
+              </td>
+            `;
+
+            tbody.appendChild(tr);
+            liveTimers[invoiceId] = timeOut;
+          }
+        });
+
+        countDisplay.textContent = `Invoices at Dispatch: ${count}`;
+      } catch (err) {
+        console.error('Fetch error:', err);
+      }
+    }
+
+    fetchData();
+    setInterval(fetchData, 30000);
+
+    setInterval(() => {
+      const now = new Date();
+      for (const [invoiceId, startTime] of Object.entries(liveTimers)) {
+        const timerElem = document.getElementById(`timer-${invoiceId}`);
+        if (timerElem && startTime instanceof Date && !isNaN(startTime.getTime())) {
+          const elapsed = now - startTime;
+          timerElem.textContent = `⏱️ Waiting Delivery: ${formatDuration(elapsed)}`;
+        }
+      }
+    }, 1000);
+
+    // Smooth Auto Scroll
+    const scrollArea = document.getElementById('scrollArea');
+    let direction = 'down';
+    let pausedUntil = 0;
+
+    function smoothScroll() {
+      function step(now) {
+        const speed = 1;
+
+        if (now < pausedUntil) {
+          requestAnimationFrame(step);
+          return;
+        }
+
+        if (direction === 'down') {
+          if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight - 1) {
+            scrollArea.scrollTop += speed;
+          } else {
+            direction = 'up';
+            pausedUntil = now + 2000;
+          }
+        } else {
+          if (scrollArea.scrollTop > 0) {
+            scrollArea.scrollTop -= speed;
+          } else {
+            direction = 'down';
+            pausedUntil = now + 2000;
+          }
+        }
+
+        requestAnimationFrame(step);
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    window.addEventListener('load', () => {
+      setTimeout(() => smoothScroll(), 3000);
+    });
+  </script>
+</body>
+</html>
