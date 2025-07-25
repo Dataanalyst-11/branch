@@ -135,6 +135,7 @@
         const data = await res.json();
         const tbody = document.getElementById('table-body');
         let invoiceCount = 0;
+        let printedCount = 0;
 
         // Clear table and timers on each refresh
         tbody.innerHTML = '';
@@ -144,6 +145,11 @@
           const storeIn = row["Store Time In"];
           const storeOut = row["Store Time Out"];
           const invoice = row["INVOICE NUMBER"] || '';
+          const printedTime = row["PRINTED TIME"];
+
+          if (printedTime) {
+           printedCount++;
+          }
 
           if (storeIn && !storeOut) {
             invoiceCount++;
@@ -181,7 +187,8 @@
 
         // Update invoice count display
         document.getElementById('invoiceCount').textContent =
-          `🔢 Total Invoices in Store: ${invoiceCount}`;
+          `🖨️ Total Invoices Printed Today: ${printedCount} |
+          🔢 Total Invoices in Store: ${invoiceCount} `;
 
       } catch (err) {
         console.error('Fetch error:', err);
