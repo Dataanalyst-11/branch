@@ -17,6 +17,10 @@
       overflow: hidden;
     }
 
+    #dashboard {
+      display: none;
+    }
+
     h1 {
       background: #b638f1;
       color: white;
@@ -84,50 +88,69 @@
       font-size: 0.85em;
       color: inherit;
     }
+
+    .auth-controls {
+      text-align: center;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
-  <h1>🏬Invoices in Store(GITHURAI)📃</h1>
-  <div id="invoiceCount">Loading invoice count...</div>
-  <div class="table-container" id="scrollArea">
-    <table>
-      <thead>
-        <tr>
-          <th>Invoice Number</th>
-          <th>Store Executive</th>
-          <th>Store Time In</th>
-          <th>Customer Name</th>
-          <th>Route</th>
-        </tr>
-      </thead>
-      <tbody id="table-body"></tbody>
-    </table>
+
+  <!-- Google Sign-In Button -->
+  <div class="auth-controls">
+    <div class="g-signin2" data-onsuccess="onSignIn"></div>
+    <a href="#" onclick="signOut();" id="signout-link" style="display:none;">Sign out</a>
   </div>
 
-  <!-- Google Sign-In Setup -->
-  <meta name="google-signin-client_id" content="677020751920-fcrsc546vqkiurjm24mbv7vo1pn45bno.apps.googleusercontent.com.apps.googleusercontent.com">
-  <script src="https://apis.google.com/js/platform.js" async defer></script>
+  <!-- Dashboard Section -->
+  <div id="dashboard">
+    <h1>🏬Invoices in Store(GITHURAI)📃</h1>
+    <div id="invoiceCount">Loading invoice count...</div>
+    <div class="table-container" id="scrollArea">
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice Number</th>
+            <th>Store Executive</th>
+            <th>Store Time In</th>
+            <th>Customer Name</th>
+            <th>Route</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
 
-  <div class="g-signin2" data-onsuccess="onSignIn"></div>
-  <a href="#" onclick="signOut();">Sign out</a>
+  <!-- Google Sign-In Meta + Script -->
+  <meta name="google-signin-client_id" content="dashboards-security.apps.googleusercontent.com">
+  <script src="https://apis.google.com/js/platform.js" async defer></script>
 
   <script>
     function onSignIn(googleUser) {
-      var profile = googleUser.getBasicProfile();
-      console.log('ID: ' + profile.getId()); // Do not send to your backend! Use an ID token instead.
+      const profile = googleUser.getBasicProfile();
       console.log('Name: ' + profile.getName());
-      console.log('Image URL: ' + profile.getImageUrl());
       console.log('Email: ' + profile.getEmail());
+
+      // Show dashboard
+      document.getElementById('dashboard').style.display = 'block';
+      document.querySelector('.g-signin2').style.display = 'none';
+      document.getElementById('signout-link').style.display = 'inline';
     }
 
     function signOut() {
-      var auth2 = gapi.auth2.getAuthInstance();
+      const auth2 = gapi.auth2.getAuthInstance();
       auth2.signOut().then(function () {
         console.log('User signed out.');
+        document.getElementById('dashboard').style.display = 'none';
+        document.querySelector('.g-signin2').style.display = 'inline-block';
+        document.getElementById('signout-link').style.display = 'none';
       });
     }
   </script>
 
+  <!-- Main Dashboard Script -->
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbxQ4Ppc4lSQY-qeWLgRg3umSzX-LIo-0NiIREPddStgmCSlqEyvMop1pffGHtsjib_N/exec';
     const liveTimers = {};
@@ -160,7 +183,7 @@
         let invoiceCount = 0;
         let printedCount = 0;
 
-        // Clear table and timers on each refresh
+        // Clear table and timers
         tbody.innerHTML = '';
         Object.keys(liveTimers).forEach(key => delete liveTimers[key]);
 
@@ -170,9 +193,7 @@
           const invoice = row["INVOICE NUMBER"] || '';
           const printedTime = row["PRINTED TIME"];
 
-          if (printedTime) {
-            printedCount++;
-          }
+          if (printedTime) printedCount++;
 
           if (storeIn && !storeOut) {
             invoiceCount++;
@@ -208,10 +229,8 @@
           }
         });
 
-        // Update invoice count display
         document.getElementById('invoiceCount').textContent =
-          `🖨️ Total Invoices Printed Today: ${printedCount}  |   
-          🔢 Total Invoices in Store: ${invoiceCount} `;
+          `🖨️ Total Invoices Printed Today: ${printedCount}  | 🔢 Total Invoices in Store: ${invoiceCount}`;
       } catch (err) {
         console.error('Fetch error:', err);
         document.getElementById('invoiceCount').textContent = 'Error loading count';
@@ -219,9 +238,8 @@
     }
 
     fetchData();
-    setInterval(fetchData, 30000); // Refresh every 30 sec
+    setInterval(fetchData, 30000);
 
-    // Update countdown timers
     setInterval(() => {
       const now = new Date();
       for (const [invoiceId, startTime] of Object.entries(liveTimers)) {
@@ -233,7 +251,7 @@
       }
     }, 1000);
 
-    // ✅ Smooth Auto Scroll with constant speed
+    // Smooth Scroll
     const scrollArea = document.getElementById('scrollArea');
     let direction = 'down';
     let pausedUntil = 0;
@@ -252,14 +270,14 @@
             scrollArea.scrollTop += speed;
           } else {
             direction = 'up';
-            pausedUntil = now + 2000; // pause at bottom
+            pausedUntil = now + 2000;
           }
         } else {
           if (scrollArea.scrollTop > 0) {
             scrollArea.scrollTop -= speed;
           } else {
             direction = 'down';
-            pausedUntil = now + 2000; // pause at top
+            pausedUntil = now + 2000;
           }
         }
 
@@ -270,7 +288,7 @@
     }
 
     window.addEventListener('load', () => {
-      setTimeout(() => smoothScroll(), 3000); // Initial delay
+      setTimeout(() => smoothScroll(), 3000);
     });
   </script>
 </body>
