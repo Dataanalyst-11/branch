@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Confirmation Flip Dashboard</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: black;
+      overflow: hidden;
+    }
+
+    .container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      perspective: 2000px;
+    }
+
+    .dashboard {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+      transition: transform 1s ease;
+    }
+
+    #dash1 {
+      transform: rotateY(0deg);
+      z-index: 2;
+    }
+
+    #dash2 {
+      transform: rotateY(180deg);
+      z-index: 1;
+    }
+
+    .flipped #dash1 {
+      transform: rotateY(-180deg);
+      z-index: 1;
+    }
+
+    .flipped #dash2 {
+      transform: rotateY(0deg);
+      z-index: 2;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="container">
+    <div class="dashboard" id="dash1">
+      <iframe src="BBGithudispatch.html"></iframe>
+    </div>
+    <div class="dashboard" id="dash2">
+      <iframe src="Githudispatch.html"></iframe>
+    </div>
+  </div>
+
+  <script>
+    let flipped = false;
+    setInterval(() => {
+      const container = document.getElementById('container');
+      flipped = !flipped;
+      container.classList.toggle('flipped', flipped);
+    }, 60000); // 5 minutes
+  </script>
+</body>
+</html>
