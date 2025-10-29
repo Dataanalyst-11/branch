@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,7 +11,7 @@
     }
     .card:hover {
       transform: scale(1.03);
-      box-shadow: 0 8px 20px rgba(7, 15, 245, 0.813);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
     }
     #scrollWrapper {
       height: 90vh;
@@ -22,39 +21,49 @@
   </style>
 </head>
 <body class="bg-gray-100 font-sans">
+  <!-- Header -->
   <div class="bg-gradient-to-r from-green-600 to-blue-600 text-white text-center py-6 shadow-lg sticky top-0 z-50">
     <h1 class="text-3xl font-bold">GITHURAI RIDERS SUMMARY(PHARMA)</h1>
-    <div class="mt-2 text-xl">
-      <span id="totalDelivered">Delivered Today: 0</span> |
-      <span id="totalPending">Pending Clearance: 0</span> |
+    <div class="mt-2 text-3xl font-bold">
+      <span id="totalDelivered">Dispatched Today: 0</span> |
+      <span id="totalPending">Pending Clearance: 0</span>  | 
+      <span id="totalCleared">Cleared: 0</span>
       <span id="currentDate"></span>
     </div>
   </div>
 
+  <!-- Scrollable Content -->
   <div id="scrollWrapper">
     <div id="riderGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <!-- Rider cards will be added here -->
+      <!-- Rider cards will be injected here -->
     </div>
   </div>
 
+  <!-- Footer -->
   <div class="text-center text-sm text-gray-500 pb-4" id="lastUpdated"></div>
 
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbxQ4Ppc4lSQY-qeWLgRg3umSzX-LIo-0NiIREPddStgmCSlqEyvMop1pffGHtsjib_N/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyVBW-TS0NMspuJ5yyxWwyPE5yqQb4FwYxDqmNoINS3yfDNWX2fFgBf7EJOP2Y5NTxo/exec';
 
-    let scrollAnimationId = null; // Track the current scroll animation
+    let scrollAnimationId = null;
     let scrollDirection = 'down';
-    const scrollSpeed = 1.5;
-    const scrollPause = 3000;
+    let lastTime = 0;
+    let pausedUntil = 0;
+
+    const scrollSpeed = 40; // pixels per second
+    const scrollPause = 3000; // pause at top/bottom in ms
 
     async function fetchRiderData() {
       try {
         const res = await fetch(API_URL);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const fullData = await res.json();
 
         const riderData = fullData
           .filter(row =>
             row["RIDER LIST"] &&
+            row["RIDER LIST"].toLowerCase() !== "customer waiting" &&   // 🚫 skip C/Waiting
+            row["RIDER LIST"].toLowerCase() !== "c/n" && // 🚫 skip Record only
             row["TOTAL NO. OF ORDERS DELIVERED TODAY"] !== undefined &&
             row["NO. OF INVOICES PENDING CLEARANCE"] !== undefined
           )
@@ -67,74 +76,112 @@
         renderDashboard(riderData);
       } catch (err) {
         console.error('Error fetching data:', err);
+        document.getElementById('riderGrid').innerHTML =
+          `<div class="col-span-full text-center text-red-600 font-bold">⚠️ Error loading data</div>`;
       }
     }
+ function renderDashboard(riders) {
+  const riderGrid = document.getElementById('riderGrid');
+  const seen = new Set();
 
-    function renderDashboard(riders) {
-      const riderGrid = document.getElementById('riderGrid');
-      riderGrid.innerHTML = '';
+  let totalDelivered = 0;
+  let totalPending = 0;
+  let totalCleared = 0;
 
-      let totalDelivered = 0;
-      let totalPending = 0;
+  riders.forEach(rider => {
+    totalDelivered += rider.delivered;
+    totalPending += rider.pending;
+    totalCleared += rider.delivered - rider.pending;
+    seen.add(rider.name);
 
-      riders.forEach(rider => {
-        totalDelivered += rider.delivered;
-        totalPending += rider.pending;
+    let card = document.getElementById(`rider-${rider.name}`);
+    const isGreen = rider.pending === 0;
 
-        const card = document.createElement('div');
-        const isGreen = rider.pending === 0;
-        card.className = `card rounded-2xl p-4 ${isGreen ? 'bg-green-600 border-green-600 text-black font-bold' : 'bg-pink-700 border-pink-700 text-white'} border-4`;
+    if (!card) {
+      // Create new card if it doesn't exist
+      card = document.createElement('section');
+      card.id = `rider-${rider.name}`;
+      card.setAttribute('role', 'region');
+      card.setAttribute('aria-label', `Rider ${rider.name}`);
 
-        card.innerHTML = `
-          <h2 class="text-xl font-bold mb-2">${rider.name}</h2>
-          <p class="text-lg">✅ Delivered: <span class="font-bold">${rider.delivered}</span></p>
-          <p class="text-lg">🔴 Pending Clearance: <span class="font-bold">${rider.pending}</span></p>
-        `;
-
-        riderGrid.appendChild(card);
-      });
-
-      document.getElementById('totalDelivered').textContent = `Delivered Today: ${totalDelivered}`;
-      document.getElementById('totalPending').textContent = `Pending Clearance: ${totalPending}`;
-
-      const now = new Date();
-      document.getElementById('currentDate').textContent = `Date: ${now.toLocaleDateString()}`;
-      document.getElementById('lastUpdated').textContent = `Last Updated: ${now.toLocaleTimeString()}`;
+      card.className = `card rounded-2xl p-4 border-4 text-white text-xl`; // 🔥 bigger font
+      riderGrid.appendChild(card);
     }
 
-    function scrollStep() {
+    // Update card classes
+    card.className = `card rounded-2xl p-4 border-4 text-white text-2xl ${
+      isGreen
+        ? 'bg-green-600 border-green-600'
+        : 'bg-pink-700 border-pink-700'
+    }`;
+
+    // Update card content
+    card.innerHTML = `
+      <h2 class="text-2xl font-extrabold mb-4">${rider.name}</h2>
+      <p class="mb-2">📖 Total Assigned: <span class="font-bold">${rider.delivered}</span></p>
+      <p class="mb-2">🏍️ In Transit: <span class="font-bold">${rider.pending}</span></p>
+      <p class="mb-2">✅ Cleared: <span class="font-bold">${rider.delivered - rider.pending}</span></p>
+    `;
+  });
+
+  // Remove old cards not in current data
+  [...riderGrid.children].forEach(card => {
+    if (!seen.has(card.id.replace('rider-', ''))) {
+      riderGrid.removeChild(card);
+    }
+  });
+
+  // ✅ Update header totals with bigger font
+  document.getElementById('totalDelivered').textContent = `Dispatched Today: ${totalDelivered}`;
+  document.getElementById('totalPending').textContent = `Pending Clearance: ${totalPending}`;
+  document.getElementById('totalCleared').textContent = `Cleared: ${totalCleared}`;
+
+  const now = new Date();
+  document.getElementById('currentDate').textContent = `📆 ${now.toLocaleDateString('en-GB')}`;
+  document.getElementById('lastUpdated').textContent = `⏱️ Last Updated: ${now.toLocaleTimeString()}`;
+}
+
+
+    function smoothScroll(now) {
+      if (!lastTime) lastTime = now;
+      const delta = now - lastTime;
+      lastTime = now;
+
       const scrollWrapper = document.getElementById('scrollWrapper');
 
+      if (now < pausedUntil) {
+        scrollAnimationId = requestAnimationFrame(smoothScroll);
+        return;
+      }
+
       if (scrollDirection === 'down') {
-        if (scrollWrapper.scrollTop + scrollWrapper.clientHeight < scrollWrapper.scrollHeight) {
-          scrollWrapper.scrollTop += scrollSpeed;
-          scrollAnimationId = requestAnimationFrame(scrollStep);
+        if (scrollWrapper.scrollTop + scrollWrapper.clientHeight < scrollWrapper.scrollHeight - 1) {
+          scrollWrapper.scrollTop += scrollSpeed * (delta / 1000);
         } else {
           scrollDirection = 'up';
-          setTimeout(() => {
-            scrollAnimationId = requestAnimationFrame(scrollStep);
-          }, scrollPause);
+          pausedUntil = now + scrollPause;
         }
       } else {
         if (scrollWrapper.scrollTop > 0) {
-          scrollWrapper.scrollTop -= scrollSpeed;
-          scrollAnimationId = requestAnimationFrame(scrollStep);
+          scrollWrapper.scrollTop -= scrollSpeed * (delta / 1000);
         } else {
           scrollDirection = 'down';
-          setTimeout(() => {
-            scrollAnimationId = requestAnimationFrame(scrollStep);
-          }, scrollPause);
+          pausedUntil = now + scrollPause;
         }
       }
+
+      scrollAnimationId = requestAnimationFrame(smoothScroll);
     }
 
     function restartScroll() {
       if (scrollAnimationId !== null) {
-        cancelAnimationFrame(scrollAnimationId); // Cancel previous animation
+        cancelAnimationFrame(scrollAnimationId);
       }
+      lastTime = 0;
+      pausedUntil = 0;
       setTimeout(() => {
-        scrollAnimationId = requestAnimationFrame(scrollStep);
-      }, 2000); // 2 seconds delay to restart
+        scrollAnimationId = requestAnimationFrame(smoothScroll);
+      }, 2000); // short pause after refresh
     }
 
     window.addEventListener('load', () => {
@@ -143,11 +190,12 @@
       setInterval(() => {
         fetchRiderData();
         restartScroll();
-      }, 15000); // Refresh data every 15 seconds
+      }, 15000); // refresh every 15 seconds
     });
   </script>
 </body>
 </html>
+
 
 
 
