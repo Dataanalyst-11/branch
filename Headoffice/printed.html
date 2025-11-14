@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Invoice Dashboard</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f8f9fa;
+      margin: 20px;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 5px;
+    }
+    #summary {
+      text-align: center;
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 15px;
+    }
+    .table-container {
+      max-height: 500px; /* adjust table viewport height */
+      overflow: hidden;
+      position: relative;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: white;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+    }
+    th, td {
+      border: 1px solid #dee2e6;
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #343a40;
+      color: white;
+      position: sticky; /* freeze headers */
+      top: 0;
+      z-index: 2;
+    }
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+    .status {
+      padding: 4px 8px;
+      border-radius: 12px;
+      color: white;
+      font-weight: bold;
+      text-transform: capitalize;
+      display: inline-block;
+    }
+    .ORDER_POSTED { background-color: #6c757d; }
+    .IN_TRANSIT { background-color: #007bff; }
+    .DELIVERED { background-color: #28a745; }
+    .CANCELLED { background-color: #dc3545; }
+    .timer {
+      display: block;
+      font-size: 12px;
+      color: #555;
+      margin-top: 2px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 14px;
+      margin-top: 10px;
+      color: gray;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>📦 Live Invoice Tracking Dashboard</h2>
+  <div id="summary">Total Invoices Printed: 0</div>
+
+  <div class="table-container">
+    <table id="invoiceTable">
+      <thead>
+        <tr>
+          <th>Invoice</th>
+          <th>TIME</th>
+          <th>Customer</th>
+          <th>Credit Terms</th>
+          <th>Branch</th>
+          <th>Tracking Status</th>
+          <th>Order Date</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    Auto-refreshes every 30 seconds • Last updated: <span id="lastUpdated"></span>
+  </div>
+
+  <script>
+    let today = new Date();
+    let yyyy = today.getFullYear();
+    let mm = String(today.getMonth() + 1).padStart(2, '0');
+    let dd = String(today.getDate()).padStart(2, '0');
+    let formatted = `${yyyy}-${mm}-${dd}`;
+
+    let testDate = '2025-11-03';
+    let testEndDate = '2025-11-03';
+
+    const API_URL = `http://192.168.4.3:8081/admin/order-tracking/list?orgBranchId=orgbranch-685002137d3c6f75c8c1db4f&status=ORDER_POSTED&startDate=${testDate}&endDate=${testEndDate}`;
+    const API_TOKEN = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpbnRlcm5hbHVzZXItNjgwOGQzOTk3YTFkNmQ1OGMxOTU4MGVkIiwiZXhwIjoxNzY0MDg3NjgxLCJqdGkiOiIwNDVlNzNiYS1lNzNiLTQ5NjEtYjM1MS1iNTFmZjg5MDM0ZTIifQ.AZQDd59dc8ifWwz-gHJ31nmoK_taSlYiXugUdTntjQzv7pClcYtuJq3VDhVkcwiRKIsQrq71zYou4TWK6IBU4w";
+
+    async function fetchInvoices() {
+      try {
+        const response = await fetch(API_URL, {
+          headers: {
+            "Authorization": API_TOKEN,
+            "Content-Type": "application/json"
+          }
+        });
+
+        const result = await response.json();
+
+        if (result.status && result.data) {
+          displayInvoices(result.data);
+          document.getElementById("lastUpdated").textContent = new Date().toLocaleTimeString();
+        } else {
+          console.error("Invalid response format", result);
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    }
+
+    function displayInvoices(data) {
+      const tbody = document.querySelector("#invoiceTable tbody");
+      tbody.innerHTML = "";
+
+      // Update total invoices summary
+      document.getElementById("summary").textContent = `Total Invoices Printed: ${data.length}`;
+
+      data.forEach(item => {
+        const row = document.createElement("tr");
+
+        const orderDateObj = new Date(item.orderDate);
+        const timeString = orderDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const timerId = `timer-${item.id}`;
+
+        row.innerHTML = `
+          <td>${item.invoiceNumber}</td>
+          <td>
+            ${timeString}
+            <span class="timer" id="${timerId}"></span>
+          </td>
+          <td>${item.customerName}</td>
+          <td>${item.creditTerm.replace(/_/g, ' ')}</td>
+          <td>${item.orgBranchName}</td>
+          <td><span class="status ${item.orderTrackingStatus}">${item.orderTrackingStatus.replace(/_/g, ' ')}</span></td>
+          <td>${orderDateObj.toLocaleDateString()}</td>
+        `;
+        tbody.appendChild(row);
+
+        updateElapsedTime(timerId, orderDateObj);
+      });
+
+      startAutoScroll();
+    }
+
+    function updateElapsedTime(timerId, orderDateObj) {
+      function update() {
+        const now = new Date();
+        const diff = now - orderDateObj;
+        const minutes = Math.floor(diff / 60000) % 60;
+        const hours = Math.floor(diff / 3600000);
+        document.getElementById(timerId).textContent = `${hours}h ${minutes}m ago`;
+      }
+      update();
+      setInterval(update, 60000);
+    }
+
+    // Bi-directional smooth auto-scroll
+    let scrollInterval;
+    function startAutoScroll() {
+      const container = document.querySelector(".table-container");
+      clearInterval(scrollInterval);
+
+      const scrollHeight = container.scrollHeight;
+      const clientHeight = container.clientHeight;
+
+      if(scrollHeight <= clientHeight) return;
+
+      let scrollTop = 0;
+      let direction = 1; // 1 = down, -1 = up
+
+      scrollInterval = setInterval(() => {
+        scrollTop += direction;
+        if(scrollTop >= scrollHeight - clientHeight) direction = -1;
+        if(scrollTop <= 0) direction = 1;
+        container.scrollTo({ top: scrollTop, behavior: 'smooth' });
+      }, 50); // speed of scroll
+    }
+
+    setInterval(fetchInvoices, 30000);
+    fetchInvoices();
+  </script>
+
+</body>
+</html>
