@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Dispatch Area-Invoices</title>
+  <title>Dispatched - Invoice Dashboard</title>
   <style>
     * {
       box-sizing: border-box;
@@ -18,7 +19,7 @@
     }
 
     h1 {
-      background: #0068be94;
+      background: #608de8;
       color: white;
       padding: 12px;
       margin: 0;
@@ -30,11 +31,11 @@
 
     #count-display {
       text-align: center;
-      font-size: 1.2em;
+      font-size: 1.8em;
       font-weight: bold;
       padding: 10px;
       background: #ffe5e5;
-      color: #dc3545;
+      color: #cb30ea;
       position: sticky;
       top: 52px;
       z-index: 99;
@@ -91,7 +92,7 @@
 </head>
 <body>
   <h1>🚘Invoices at GITHURAI BEIBORA Dispatch Area🤖</h1>
-  <div id="count-display">Invoices at Dispatch: 0</div>
+  <div id="count-display">Loading count🔁: 0</div>
 
   <div class="table-container" id="scrollArea">
     <table>
@@ -108,163 +109,158 @@
   </div>
 
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbyaTT7YsxkYE1W2kRK4Lz5d0rcWoVB5dwnAy-BVi5Jiryg2DgbckGEF_5XKznTVyu28/exec';
-    const liveTimers = {};
+  const API_URL = 'https://script.google.com/macros/s/AKfycbyaTT7YsxkYE1W2kRK4Lz5d0rcWoVB5dwnAy-BVi5Jiryg2DgbckGEF_5XKznTVyu28/exec';
+  const liveTimers = {};
 
-    function parseTimeToDate(input) {
-      const parts = input.match(/(\d+):(\d+):(\d+)\s*(am|pm)/i);
-      if (parts) {
-        const now = new Date();
-        let hours = parseInt(parts[1], 10);
-        const minutes = parseInt(parts[2], 10);
-        const seconds = parseInt(parts[3], 10);
-        const period = parts[4].toLowerCase();
+  function formatDateTime(input) {
+    const date = parseDate(input);
+    if (!date) return input || '';
+    const pad = n => n.toString().padStart(2, '0');
+    return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }
 
-        if (period === 'pm' && hours !== 12) hours += 12;
-        if (period === 'am' && hours === 12) hours = 0;
+  function formatDuration(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    return hours > 0
+      ? `${hours} hr ${minutes} min ${seconds} sec`
+      : `${minutes} min ${seconds} sec`;
+  }
 
-        const date = new Date(now);
-        date.setHours(hours, minutes, seconds, 0);
-        return date;
-      }
+  function parseDate(value) {
+    if (!value) return null;
 
-      const fallback = new Date(input);
-      return isNaN(fallback.getTime()) ? null : fallback;
+    // First try native parse
+    const d = new Date(value);
+    if (!isNaN(d)) return d;
+
+    // Handle dd/MM/yyyy hh:mm:ss
+    const parts = value.split(/[/ :]/);
+    if (parts.length >= 5 && parts[0].length <= 2) {
+      const [day, month, year, hour, minute, second = 0] = parts.map(Number);
+      return new Date(year, month - 1, day, hour, minute, second);
     }
 
-    function formatDateTime(input) {
-      let date = (input instanceof Date) ? input : parseTimeToDate(input);
-      if (!date || isNaN(date.getTime())) return input;
-
-      const pad = n => n.toString().padStart(2, '0');
-      return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    // Handle only time strings (hh:mm:ss am/pm)
+    if (/am|pm/i.test(value) && !value.includes('/')) {
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0]; // yyyy-mm-dd
+      const d2 = new Date(`${dateStr} ${value}`);
+      if (!isNaN(d2)) return d2;
     }
 
-    function formatDuration(ms) {
-      const totalSec = Math.floor(ms / 1000);
-      const hours = Math.floor(totalSec / 3600);
-      const minutes = Math.floor((totalSec % 3600) / 60);
-      const seconds = totalSec % 60;
+    return null;
+  }
 
-      if (hours > 0) {
-        return `${hours} hr ${minutes} min ${seconds} sec`;
-      } else {
-        return `${minutes} min ${seconds} sec`;
-      }
+  async function fetchData() {
+    try {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      const tbody = document.getElementById('table-body');
+      const countDisplay = document.getElementById('count-display');
+
+      tbody.innerHTML = '';
+      Object.keys(liveTimers).forEach(key => delete liveTimers[key]);
+
+      let count = 0;
+      let delivered = 0;
+
+      data.reverse().forEach(row => {
+        const confirmationOut = row["CONFIRMATION TIME OUT"];
+        const rider = row["RIDER"];
+        const deliv = row["DELIVERED BY"]
+        const invoice = row["INVOICE NUMBER"] || '';
+        if (rider) delivered++;
+
+        const timeOut = parseDate(confirmationOut);
+        if (timeOut && !rider && !deliv) {
+          count++;
+          const now = new Date();
+          const minutesPassed = (now - timeOut) / (1000 * 60);
+          const invoiceId = invoice.replace(/\s/g, '');
+          const timerId = `timer-${invoiceId}`;
+
+          const tr = document.createElement('tr');
+          if (minutesPassed > 50) tr.classList.add('highlight-red');
+          else if (minutesPassed > 25) tr.classList.add('highlight-yellow');
+          else tr.classList.add('highlight-green');
+
+          tr.innerHTML = `
+            <td>${invoice}</td>
+            <td>${row["CUSTOMER NAME"] || ''}</td>
+            <td>${row["ROUTE"] || ''}</td>
+            <td>
+              ${formatDateTime(confirmationOut)}<br>
+              <small id="${timerId}">⏱️ Waiting: calculating...</small>
+            </td>
+          `;
+
+          tbody.appendChild(tr);
+          liveTimers[invoiceId] = timeOut;
+        }
+      });
+
+      countDisplay.textContent =
+        `Invoices Dispatched Today: ${delivered} | Active Invoices at Dispatch Area: ${count}`;
+
+    } catch (err) {
+      console.error('Fetch error:', err);
     }
+  }
 
-    async function fetchData() {
-      try {
-        const res = await fetch(API_URL);
-        const data = await res.json();
-        const tbody = document.getElementById('table-body');
-        const countDisplay = document.getElementById('count-display');
+  fetchData();
+  setInterval(fetchData, 30000);
 
-        tbody.innerHTML = '';
-        Object.keys(liveTimers).forEach(key => delete liveTimers[key]);
-
-        let count = 0;
-
-        data.reverse().forEach(row => {
-          const confirmationOut = row["CONFIRMATION TIME OUT"];
-          const rider = row["Delivered By"] || row["RIDER"];
-          const invoice = row["INVOICE NUMBER"] || '';
-
-          if (confirmationOut && !rider) {
-            const timeOut = parseTimeToDate(confirmationOut);
-            if (!timeOut) return;
-
-            count++;
-            const now = new Date();
-            const minutesPassed = (now - timeOut) / (1000 * 60);
-            const invoiceId = invoice.replace(/\s/g, '');
-            const timerId = `timer-${invoiceId}`;
-
-            const tr = document.createElement('tr');
-
-            if (minutesPassed > 50) {
-              tr.classList.add('highlight-red');
-            } else if (minutesPassed > 25) {
-              tr.classList.add('highlight-yellow');
-            } else {
-              tr.classList.add('highlight-green');
-            }
-
-            tr.innerHTML = `
-              <td>${invoice}</td>
-              <td>${row["Customer Name"] || ''}</td>
-              <td>${row["ROUTE"] || ''}</td>
-              <td>
-                ${formatDateTime(confirmationOut)}<br>
-                <small id="${timerId}">⏱️ Waiting Delivery: calculating...</small>
-              </td>
-            `;
-
-            tbody.appendChild(tr);
-            liveTimers[invoiceId] = timeOut;
-          }
-        });
-
-        countDisplay.textContent = `Invoices at Dispatch: ${count}`;
-      } catch (err) {
-        console.error('Fetch error:', err);
-      }
-    }
-
-    fetchData();
-    setInterval(fetchData, 30000);
-
-    setInterval(() => {
-      const now = new Date();
-      for (const [invoiceId, startTime] of Object.entries(liveTimers)) {
-        const timerElem = document.getElementById(`timer-${invoiceId}`);
-        if (timerElem && startTime instanceof Date && !isNaN(startTime.getTime())) {
-          const elapsed = now - startTime;
-          timerElem.textContent = `⏱️ Waiting Delivery: ${formatDuration(elapsed)}`;
+  setInterval(() => {
+    const now = new Date();
+    for (const [invoiceId, startTime] of Object.entries(liveTimers)) {
+      const timerElem = document.getElementById(`timer-${invoiceId}`);
+      if (timerElem && startTime instanceof Date) {
+        const elapsed = now - startTime;
+        if (!isNaN(elapsed)) {
+          timerElem.textContent = `⏱️ Waiting: ${formatDuration(elapsed)}`;
         }
       }
-    }, 1000);
-
-    // Smooth Auto Scroll
-    const scrollArea = document.getElementById('scrollArea');
+    }
+  }, 1000);
+    // Smooth auto-scroll
     let direction = 'down';
     let pausedUntil = 0;
+    let lastTime = 0;
 
-    function smoothScroll() {
-      function step(now) {
-        const speed = 1;
+    function smoothScroll(now) {
+      if (!lastTime) lastTime = now;
+      const delta = now - lastTime;
+      lastTime = now;
+      const speed = 70;
+      if (now < pausedUntil) return requestAnimationFrame(smoothScroll);
 
-        if (now < pausedUntil) {
-          requestAnimationFrame(step);
-          return;
-        }
-
-        if (direction === 'down') {
-          if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight - 1) {
-            scrollArea.scrollTop += speed;
-          } else {
-            direction = 'up';
-            pausedUntil = now + 2000;
-          }
+      if (direction === 'down') {
+        if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight - 1) {
+          scrollArea.scrollTop += speed * (delta / 1000);
         } else {
-          if (scrollArea.scrollTop > 0) {
-            scrollArea.scrollTop -= speed;
-          } else {
-            direction = 'down';
-            pausedUntil = now + 2000;
-          }
+          direction = 'up';
+          pausedUntil = now + 3000;
         }
-
-        requestAnimationFrame(step);
+      } else {
+        if (scrollArea.scrollTop > 0) {
+          scrollArea.scrollTop -= speed * (delta / 1000);
+        } else {
+          direction = 'down';
+          pausedUntil = now + 3000;
+        }
       }
-
-      requestAnimationFrame(step);
+      requestAnimationFrame(smoothScroll);
     }
 
     window.addEventListener('load', () => {
-      setTimeout(() => smoothScroll(), 3000);
+      setTimeout(() => requestAnimationFrame(smoothScroll), 3000);
     });
-  </script>
-</body>
+</script>
 
+</body>
 </html>
+
+
