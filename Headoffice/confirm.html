@@ -30,7 +30,7 @@
       position: sticky;
     }
 
-    /* Summary Bar */
+    /* Summary Counter */
     #summary {
       text-align: center;
       background: #6c757d;
@@ -79,28 +79,12 @@
     tr:nth-child(even) { background-color: #fafafa; }
 
     /* Row color coding based on elapsed time */
-    .green-row {
-      background-color: #006400 !important;
-      color: white;
-      font-weight: bold;
-    }
-    .yellow-row {
-      background-color: #FFD700 !important;
-      color: black;
-      font-weight: bold;
-    }
-    .red-row {
-      background-color: #8B0000 !important;
-      color: white;
-      font-weight: bold;
-    }
+    .green-row { background-color: #006400 !important; color: white; font-weight: bold; }
+    .yellow-row { background-color: #FFD700 !important; color: black; font-weight: bold; }
+    .red-row { background-color: #8B0000 !important; color: white; font-weight: bold; }
 
     /* Timer text under time */
-    .timer {
-      display: block;
-      font-size: 12px;
-      margin-top: 2px;
-    }
+    .timer { display: block; font-size: 12px; margin-top: 2px; }
 
     .status {
       padding: 4px 8px;
@@ -111,12 +95,7 @@
       display: inline-block;
     }
 
-    .footer {
-      text-align: center;
-      font-size: 14px;
-      margin-top: 10px;
-      color: gray;
-    }
+    .footer { text-align: center; font-size: 14px; margin-top: 10px; color: gray; }
   </style>
 </head>
 
@@ -151,6 +130,9 @@
     Last updated: <span id="lastUpdated"></span>
   </div>
 
+  <!-- Load the config first -->
+  <script src="config.js"></script>
+
   <script>
     /* Build today's date */
     let today = new Date();
@@ -159,18 +141,18 @@
     let dd = String(today.getDate()).padStart(2, '0');
     let formatted = `${yyyy}-${mm}-${dd}`;
 
-    /* Test range */
-    let testDate = "2025-11-03";
-    let testEndDate = "2025-11-03";
+    /* Test period */
+    let testDate = '2025-11-04';
+    let testEndDate = '2025-11-04';
+    // ================================
+    // Use central config instead of hardcoding
+    // ================================
+    const API_URL = window.API_CONFIG.API_URL+`?status=ITEM_CONFIRMATION&orgBranchId=orgbranch-68458a4b76bd774c32f10527&startDate=${formatted}`;
+    const API_TOKEN = window.API_CONFIG.API_TOKEN;
 
-    /* API Endpoint */
-    const API_URL =
-      `http://192.168.4.3:8081/admin/order-tracking/list?status=ITEM_CONFIRMATION`;
-
-    const API_TOKEN =
-      "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpbnRlcm5hbHVzZXItNjgwOGQzOTk3YTFkNmQ1OGMxOTU4MGVkIiwiZXhwIjoxNzY0MDg3NjgxLCJqdGkiOiIwNDVlNzNiYS1lNzNiLTQ5NjEtYjM1MS1iNTFmZjg5MDM0ZTIifQ.AZQDd59dc8ifWwz-gHJ31nmoK_taSlYiXugUdTntjQzv7pClcYtuJq3VDhVkcwiRKIsQrq71zYou4TWK6IBU4w";
-
-    /* Fetch API Data */
+    // ================================
+    // Fetch API Data
+    // ================================
     async function fetchInvoices() {
       try {
         const response = await fetch(API_URL, {
@@ -192,58 +174,46 @@
       }
     }
 
-    /* Render Rows */
+    // ================================
+    // Render Table Rows
+    // ================================
     function displayInvoices(data) {
       const tbody = document.querySelector("#invoiceTable tbody");
       tbody.innerHTML = "";
 
       document.getElementById("summary").textContent =
-        `Total Invoices In Store: ${data.length}`;
+        `Total Invoices In Confirmation: ${data.length}`;
 
       data.forEach(item => {
         const row = document.createElement("tr");
-
-        // Using storeCheckinAt as STORE TIME IN
+       //Time Invoice entererd Confirmation
         const timeObj = new Date(item.orderConfirmationCheckinAt);
-
         const diffMs = Date.now() - timeObj.getTime();
         const diffMinutes = diffMs / 60000;
 
-        /* Row color logic */
+        // Row color logic based on elapsed time
         if (diffMinutes <= 5) row.classList.add("green-row");
         else if (diffMinutes <= 15) row.classList.add("yellow-row");
         else row.classList.add("red-row");
 
-        const timeString = timeObj.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit"
-        });
-
+        const timeString = timeObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const timerId = `timer-${item.id}`;
 
-        /* Fully aligned row (STORE EXECUTIVE = item.assignee) */
         row.innerHTML = `
           <td>${item.invoiceNumber}</td>
-
           <td>
             ${timeString}
             <span class="timer" id="${timerId}"></span>
           </td>
-
           <td>${item.itemsConfirmedByName || "—"}</td>
-
           <td>${item.customerName}</td>
-
           <td>${item.creditTerm.replace(/_/g, " ")}</td>
-
           <td>${item.routeName}</td>
-
           <td>
             <span class="status ${item.orderTrackingStatus}">
               ${item.orderTrackingStatus.replace(/_/g, " ")}
             </span>
           </td>
-
           <td>${timeObj.toLocaleDateString()}</td>
         `;
 
@@ -254,7 +224,9 @@
       startAutoScroll();
     }
 
-    /* Timer Under STORE TIME IN */
+    // ================================
+    // Timer Under Confirmation Time In
+    // ================================
     function startElapsedTimer(timerId, timeObj) {
       function update() {
         const diff = Date.now() - timeObj;
@@ -269,7 +241,9 @@
       setInterval(update, 60000);
     }
 
-    /* Bi-directional Smooth Auto Scroll */
+    // ================================
+    // Bi-directional Smooth Auto Scroll
+    // ================================
     let scrollInterval;
 
     function startAutoScroll() {
@@ -291,7 +265,9 @@
       }, 50);
     }
 
-    /* Auto-refresh every 30 seconds */
+    // ================================
+    // Auto-refresh every 30 seconds
+    // ================================
     setInterval(fetchInvoices, 30000);
     fetchInvoices();
   </script>
