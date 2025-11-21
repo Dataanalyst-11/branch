@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Riders Performance Dashboard</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      background: #745cfa;
+      text-align: center;
+      margin: 0;
+      padding: 12px;
+      color: white;
+      top: 0;
+      z-index: 100;
+      font-weight: bolder;
+      position: sticky;
+                  
+    }
+
+    /* Summary bar */
+    #summaryBar {
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+      background: #fff;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    #summaryBar div {
+      flex: 1 1 200px;
+      margin: 5px;
+      padding: 15px;
+      border-radius: 8px;
+      font-weight: bold;
+      color: #fff;
+      text-align: center;
+    }
+
+    #totalAssigned { background: #007bff; }
+    #totalDelivered { background: #28a745; }
+    #totalCleared { background: #17a2b8; }
+    #pendingClearance { background: #dc3545; }
+
+    /* Grid layout */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+      padding: 10px;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+      height: 70vh;
+    }
+
+    /* Card */
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      border-left: 6px solid #007bff;
+      transition: transform 0.2s ease-in-out;
+    }
+
+    .card:hover { transform: scale(1.02); }
+
+    .good {
+      border-left-color: #008000 !important;
+      background: #e8f9e8;
+    }
+    .bad {
+      border-left-color: #cc0000 !important;
+      background: #ffe6e6;
+    }
+
+    .rider-name {
+      font-size: 20px;
+      font-weight: bolder;
+      margin-bottom: 10px;
+      color: #222;
+    }
+
+    .good .rider-name { color: #064b06; }
+    .bad .rider-name { color: #8b0000; }
+
+    .stat {
+      font-size: 15px;
+      font-weight: bolder;
+      margin: 5px 0;
+      padding: 5px 0;
+      border-bottom: 1px solid #eaeaea;
+    }
+
+    .stat:last-child { border-bottom: none; }
+
+    .error-message, .loading {
+      text-align: center;
+      font-weight: bold;
+      margin-top: 20px;
+    }
+
+    .error-message { color: red; }
+    .loading { color: #555; }
+  </style>
+</head>
+<body>
+
+  <h1 class="text-3xl font-bolder">Riders Summary Reports</h1>
+
+  <div id="summaryBar">
+    <div id="totalAssigned">Total Assigned Invoices: 0</div>
+    <div id="totalDelivered">Delivered Today: 0</div>
+    <div id="totalCleared">Total Cleared Invoices: 0</div>
+    <div id="pendingClearance">Pending Clearance: 0</div>
+  </div>
+
+  <div id="ridersContainer" class="grid">
+    <div class="loading">Loading riders data...</div>
+  </div>
+
+ <!-- Load the config first -->
+  <script src="config.js"></script>
+
+  <script>
+    // ==== CONFIGURABLE SETTINGS ====
+    const SCROLL_SPEED_PX_PER_SEC = 70;   // how fast to scroll
+    const EDGE_PAUSE_MS = 2000;           // how long to pause at top/bottom
+    const REFRESH_INTERVAL_MS = 30000;    // reload data every 30s
+    // ================================
+
+    /* Build today's date */
+    let today = new Date();
+    let yyyy = today.getFullYear();
+    let mm = String(today.getMonth() + 1).padStart(2, '0');
+    let dd = String(today.getDate()).padStart(2, '0');
+    let formatted = `${yyyy}-${mm}-${dd}`;
+
+    /* Test range */
+    let testDate = "2025-10-01";
+    let testEndDate = "2025-11-04";
+
+    // Use central config instead of hardcoding
+    //683976e3994a072a600cbd7a-Headoffice
+    // ================================
+    const API_URL = window.API_CONFIG.API_URL+`/driver-dispatch-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
+    const API_TOKEN = window.API_CONFIG.API_TOKEN;
+
+    async function loadRiders() {
+      const container = document.getElementById("ridersContainer");
+      container.innerHTML = "<div class='loading'>Loading riders data...</div>";
+
+      try {
+        const res = await fetch(API_URL, {
+          headers: {
+            "Authorization": API_TOKEN,
+            "Content-Type": "application/json"
+          }
+        });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+        const response = await res.json();
+        const riders = response.data || [];
+
+        if (!riders.length) {
+          container.innerHTML = "<div class='error-message'>No rider data available.</div>";
+          return;
+        }
+
+        updateSummary(riders);
+        renderRiders(riders);
+
+        // start smooth scroll AFTER rendering
+        startBidirectionalScroll(container);
+
+      } catch (error) {
+        console.error("Error loading riders:", error);
+        container.innerHTML = `<div class='error-message'>
+          Failed to load data. Please retry later.<br>(${error.message})
+        </div>`;
+      }
+    }
+
+    function updateSummary(riders) {
+      let delivered = 0, cleared = 0, assigned = 0;
+      riders.forEach(r => {
+        delivered += r.ordersDelivered;
+        cleared += r.ordersCleared;
+        assigned += r.ordersAssigned;
+      });
+      const pending = assigned - cleared;
+
+      document.getElementById("totalAssigned").textContent = `Total Assigned Invoices: ${assigned}`;
+      document.getElementById("totalDelivered").textContent = `Delivered Today: ${delivered}`;
+      document.getElementById("totalCleared").textContent = `Total Cleared Invoices: ${cleared}`;
+      document.getElementById("pendingClearance").textContent = `Pending Clearance: ${pending}`;
+    }
+
+    function renderRiders(riders) {
+      const container = document.getElementById("ridersContainer");
+      container.innerHTML = "";
+      riders.forEach(rider => {
+        const card = document.createElement("div");
+        card.className = "card " + (rider.ordersDelivered > rider.ordersCleared ? "bad" : "good");
+        card.innerHTML = `
+          <div class="rider-name">${rider.driverName}</div>
+          <div class="stat"><strong>Orders Assigned:</strong> ${rider.ordersAssigned}</div>
+          <div class="stat"><strong>Delivered:</strong> ${rider.ordersDelivered}</div>
+          <div class="stat"><strong>Cleared:</strong> ${rider.ordersCleared}</div>
+          <div class="stat"><strong>Failed:</strong> ${rider.ordersFailed}</div>
+          <div class="stat"><strong>Cancelled:</strong> ${rider.ordersCancelled}</div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // ==== FIXED BIDIRECTIONAL SMOOTH SCROLL ====
+    function startBidirectionalScroll(scrollArea) {
+      let direction = 'down';
+      let pausedUntil = 0;
+      let lastTime = 0;
+
+      function animateScroll(now) {
+        if (!lastTime) lastTime = now;
+        const delta = now - lastTime;
+        lastTime = now;
+
+        if (now < pausedUntil) return requestAnimationFrame(animateScroll);
+
+        const distance = SCROLL_SPEED_PX_PER_SEC * (delta / 1000);
+
+        if (direction === 'down') {
+          if (scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight - 1) {
+            scrollArea.scrollTop += distance;
+          } else {
+            direction = 'up';
+            pausedUntil = now + EDGE_PAUSE_MS;
+          }
+        } else {
+          if (scrollArea.scrollTop > 0) {
+            scrollArea.scrollTop -= distance;
+          } else {
+            direction = 'down';
+            pausedUntil = now + EDGE_PAUSE_MS;
+          }
+        }
+
+        requestAnimationFrame(animateScroll);
+      }
+
+      // Start after a short delay for clarity
+      setTimeout(() => requestAnimationFrame(animateScroll), 1000);
+    }
+
+    loadRiders();
+    setInterval(loadRiders, REFRESH_INTERVAL_MS);
+  </script>
+</body>
+</html>
