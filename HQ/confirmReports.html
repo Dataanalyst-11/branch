@@ -17,31 +17,45 @@
         color: white;
         margin: 0;
     }
-    table {
+
+    /* FIXED HEADER, SCROLLING BODY */
+    .table-container {
+        height: 85vh;
+        overflow-y: auto;
+        overflow-x: hidden;
         width: 95%;
-        margin: 20px auto;
+        margin: 0 auto;
+    }
+
+    table {
+        width: 100%;
         border-collapse: collapse;
         background: white;
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
+
     th, td {
         padding: 12px;
         text-align: center;
         border: 1px solid #ddd;
     }
+
     th {
         background: #2c3e50;
         color: white;
         font-size: 14px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
     }
+
     tr:hover {
         background: #f1f1f1;
     }
 
-    /* NEW COLOR RULES */
-    .score-high { background: #27ae60; color: white; }   /* >= 80% */
-    .score-medium { background: #f1c40f; color: black; } /* 50–79% */
-    .score-low { background: #e74c3c; color: white; }    /* < 50% */
+    .score-high { background: #27ae60; color: white; }
+    .score-medium { background: #f1c40f; color: black; }
+    .score-low { background: #e74c3c; color: white; }
 
     #lastUpdated {
         text-align: center;
@@ -55,41 +69,39 @@
 <h1>Confirmer Performance Report</h1>
 <p id="lastUpdated">Last updated: --</p>
 
-<table id="performanceTable">
-    <thead>
-        <tr>
-            <th>Confirmation Attendant</th>
-            <th>Branch</th>
-            <th>Total Orders</th>
-            <th>Line Items</th>
-            <th>Avg Items per Order</th>
-            <th>Orders per Hour</th>
-            <th>Efficiency Score (%)</th>
-        </tr>
-    </thead>
-    <tbody></tbody>
-</table>
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th>Confirmation Attendant</th>
+                <th>Branch</th>
+                <th>Total Orders</th>
+                <th>Line Items</th>
+                <th>Avg Items per Order</th>
+                <th>Orders per Hour</th>
+                <th>Efficiency Score (%)</th>
+            </tr>
+        </thead>
 
-<!-- Load config -->
+        <tbody id="performanceBody"></tbody>
+    </table>
+</div>
+
 <script src="config.js"></script>
 
 <script>
-// =========================
-// API Configuration
-// =========================
+// =============== API CONFIG ===================
 let today = new Date();
 let yyyy = today.getFullYear();
 let mm = String(today.getMonth() + 1).padStart(2, '0');
 let dd = String(today.getDate()).padStart(2, '0');
 let formatted = `${yyyy}-${mm}-${dd}`;
-//683976e3994a072a600cbd7a-Headoffice
+
 const API_URL = window.API_CONFIG.API_URL +
   `order-confirmer-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
 const API_TOKEN = window.API_CONFIG.API_TOKEN;
 
-// =========================
-// Percentage Scoring Formula
-// =========================
+// =============== SCORING FORMULA ===================
 function calculatePerformance(attendant) {
   const hoursWorked = 8;
   const orders = attendant.numberOfOrders || 0;
@@ -100,12 +112,10 @@ function calculatePerformance(attendant) {
   const ordersPerHour = orders / hoursWorked;
   const avgOrderValue = orders > 0 ? amount / orders : 0;
 
-  // Normalize values (capped at 100%)
-  const scoreOrders = Math.min((ordersPerHour / 20) * 100, 100);       // 0–20 orders/hr
-  const scoreItems  = Math.min((avgItemsPerOrder / 10) * 100, 100);    // 0–10 items/order
-  const scoreValue  = Math.min((avgOrderValue / 5000) * 100, 100);     // 0–5000 KES/order
+  const scoreOrders = Math.min((ordersPerHour / 20) * 100, 100);
+  const scoreItems  = Math.min((avgItemsPerOrder / 10) * 100, 100);
+  const scoreValue  = Math.min((avgOrderValue / 5000) * 100, 100);
 
-  // Weighted final percentage
   const finalScore = (
     (scoreOrders * 0.4) +
     (scoreItems  * 0.3) +
@@ -126,53 +136,79 @@ function scoreClass(score) {
   return "score-low";
 }
 
-// =========================
-// Load and Render Data
-// =========================
+// =============== LOAD & RENDER ===================
 async function loadPerformanceData() {
-  const tbody = document.querySelector("#performanceTable tbody");
-  tbody.innerHTML = "<tr><td colspan='9'>Loading data...</td></tr>";
+    const tbody = document.getElementById("performanceBody");
+    tbody.innerHTML = "<tr><td colspan='9'>Loading...</td></tr>";
 
-  try {
-    const response = await fetch(API_URL, {
-      headers: {
-        "Authorization": API_TOKEN,
-        "Content-Type": "application/json"
-      }
-    });
+    try {
+        const response = await fetch(API_URL, {
+            headers: {
+                "Authorization": API_TOKEN,
+                "Content-Type": "application/json"
+            }
+        });
 
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP error! ${response.status}`);
 
-    const json = await response.json();
-    const attendants = Array.isArray(json) ? json : json.data || [];
+        const json = await response.json();
+        const attendants = Array.isArray(json) ? json : json.data || [];
 
-    if (attendants.length === 0) {
-      tbody.innerHTML = "<tr><td colspan='9'>No data available</td></tr>";
-      return;
+        if (attendants.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='9'>No data</td></tr>";
+            return;
+        }
+
+        attendants.forEach(a => a.performance = calculatePerformance(a));
+
+        attendants.sort((a, b) => b.performance.score - a.performance.score);
+
+        tbody.innerHTML = attendants.map(a => `
+            <tr>
+                <td>${a.itemsConfirmedByName}</td>
+                <td>${a.orgBranchName}</td>
+                <td>${a.numberOfOrders}</td>
+                <td>${a.numberOfLineItems}</td>
+                <td>${a.performance.avgItemsPerOrder.toFixed(2)}</td>
+                <td>${a.performance.ordersPerHour.toFixed(2)}</td>
+                <td class="${scoreClass(a.performance.score)}">${a.performance.score.toFixed(1)}%</td>
+            </tr>
+        `).join("");
+
+        document.getElementById("lastUpdated").textContent =
+            "Last updated: " + new Date().toLocaleTimeString();
+
+        startAutoScroll();
+
+    } catch (e) {
+        console.error(e);
+        tbody.innerHTML = "<tr><td colspan='9' style='color:red;'>Error loading data</td></tr>";
     }
+}
 
-    const rows = attendants.map(a => {
-      const p = calculatePerformance(a);
-      return `
-        <tr>
-          <td>${a.itemsConfirmedByName}</td>
-          <td>${a.orgBranchName}</td>
-          <td>${a.numberOfOrders}</td>
-          <td>${a.numberOfLineItems}</td>
-          <td>${p.avgItemsPerOrder.toFixed(2)}</td>
-          <td>${p.ordersPerHour.toFixed(2)}</td>
-          <td class="${scoreClass(p.score)}">${p.score.toFixed(1)}%</td>
-        </tr>`;
-    }).join('');
+// =============== YOUR SCROLLING CRITERIA ===================
+let scrollInterval;
 
-    tbody.innerHTML = rows;
-    document.getElementById("lastUpdated").textContent =
-      "Last updated: " + new Date().toLocaleTimeString();
+function startAutoScroll() {
+    const container = document.querySelector(".table-container");
+    clearInterval(scrollInterval);
 
-  } catch (error) {
-    console.error("Failed to load data:", error);
-    tbody.innerHTML = `<tr><td colspan='9' style='color:red;'>Error loading data</td></tr>`;
-  }
+    if (container.scrollHeight <= container.clientHeight) return;
+
+    let scrollTop = 0;
+    let direction = 1;
+
+    scrollInterval = setInterval(() => {
+        scrollTop += direction;
+
+        if (scrollTop >= container.scrollHeight - container.clientHeight) direction = -1;
+        if (scrollTop <= 0) direction = 1;
+
+        container.scrollTo({
+            top: scrollTop,
+            behavior: "smooth"
+        });
+    }, 50);
 }
 
 loadPerformanceData();
