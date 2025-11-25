@@ -57,13 +57,13 @@
       IntransitFrame.classList.remove('active');
       riderFrame.classList.add('active');
       showingIntransit = false;
-      timer = setTimeout(switchDashboard, 180000); // 3 minutes for rider
+      timer = setTimeout(switchDashboard, 300000); // 5 minutes for rider
     } else {
       IntransitFrame.src = "Intransit.html?nocache=" + new Date().getTime();
       riderFrame.classList.remove('active');
       IntransitFrame.classList.add('active');
       showingIntransit = true;
-      timer = setTimeout(switchDashboard, 600000); // 10 minutes for cashier
+      timer = setTimeout(switchDashboard, 300000); // 5 minutes for cashier
     }
   }
 
