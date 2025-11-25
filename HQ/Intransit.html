@@ -95,20 +95,10 @@
       font-weight: bold;
     }
 
-    /* Timer text under time */
     .timer {
       display: block;
       font-size: 12px;
       margin-top: 2px;
-    }
-
-    .status {
-      padding: 4px 8px;
-      border-radius: 8px;
-      color: white;
-      font-weight: bold;
-      font-size: 12px;
-      display: inline-block;
     }
 
     .footer {
@@ -122,13 +112,10 @@
 
 <body>
 
-  <!-- Dashboard Title -->
   <h2>🏍️IN TRANSIT(TO CUSTOMER)DASHBOARD🚚</h2>
 
-  <!-- Summary Counter -->
   <div id="summary">Total Invoices Dispatched: 0</div>
 
-  <!-- Scrollable Table -->
   <div class="table-container">
     <table id="invoiceTable">
       <thead>
@@ -139,7 +126,6 @@
           <th>Customer Name</th>
           <th>Credit Terms</th>
           <th>Route</th>
-          
           <th>Order Date</th>
         </tr>
       </thead>
@@ -149,9 +135,9 @@
 
   <div class="footer">
     Last updated: <span id="lastUpdated"></span>
-   <div>Designed and Managed by MIS.DPT</div>
+    <div>Designed and Managed by MIS.DPT</div>
   </div>
- <!-- Load the config first -->
+
   <script src="config.js"></script>
 
   <script>
@@ -162,19 +148,13 @@
     let dd = String(today.getDate()).padStart(2, '0');
     let formatted = `${yyyy}-${mm}-${dd}`;
 
-    /* Test range */
-    let testDate = "2025-10-01";
-    let testEndDate = "2025-11-04";
+    const API_URL =
+      window.API_CONFIG.API_URL +
+      `list?status=IN_TRANSIT&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
 
-    // Use central config instead of hardcoding
-    //683976e3994a072a600cbd7a-Headoffice
-    // ================================
-    const API_URL = window.API_CONFIG.API_URL+`list?status=IN_TRANSIT&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
     const API_TOKEN = window.API_CONFIG.API_TOKEN;
 
-    // ================================
-    // Fetch API Data
-    // ================================
+    // Fetch API data
     async function fetchInvoices() {
       try {
         const response = await fetch(API_URL, {
@@ -196,7 +176,25 @@
       }
     }
 
-    /* Render Rows */
+    /* GLOBAL ELAPSED TIMER UPDATER */
+    function updateAllElapsedTimers() {
+      const timers = document.querySelectorAll(".timer");
+
+      timers.forEach(elem => {
+        const ts = Number(elem.getAttribute("data-timestamp"));
+        const diff = Date.now() - ts;
+
+        const mins = Math.floor(diff / 60000);
+        const hrs = Math.floor(mins / 60);
+
+        elem.textContent =
+          `Time elapsed since dispatched: ${hrs}h ${mins % 60}m`;
+      });
+    }
+
+    setInterval(updateAllElapsedTimers, 60000);
+
+    /* RENDER ROWS */
     function displayInvoices(data) {
       const tbody = document.querySelector("#invoiceTable tbody");
       tbody.innerHTML = "";
@@ -207,15 +205,12 @@
       data.forEach(item => {
         const row = document.createElement("tr");
 
-        // Time Invoice was Dispatched
         const timeObj = new Date(item.dispatchedAt);
 
-        const diffMs = Date.now() - timeObj.getTime();
-        const diffMinutes = diffMs / 60000;
+        const diff = (Date.now() - timeObj.getTime()) / 60000;
 
-        /* Row color logic */
-        if (diffMinutes <= 5) row.classList.add("green-row");
-        else if (diffMinutes <= 15) row.classList.add("yellow-row");
+        if (diff <= 25) row.classList.add("green-row");
+        else if (diff <= 50) row.classList.add("yellow-row");
         else row.classList.add("red-row");
 
         const timeString = timeObj.toLocaleTimeString([], {
@@ -223,53 +218,32 @@
           minute: "2-digit"
         });
 
-        const timerId = `timer-${item.id}`;
+        const timerId = `timer-${item.invoiceNumber}`;
 
-        /* Fully aligned row (STORE EXECUTIVE = item.assignee) */
         row.innerHTML = `
           <td>${item.invoiceNumber}</td>
 
           <td>
             ${timeString}
-            <span class="timer" id="${timerId}"></span>
+            <span class="timer" id="${timerId}"
+                  data-timestamp="${timeObj.getTime()}"></span>
           </td>
 
           <td>${item.driverName || "—"}</td>
-
           <td>${item.customerName}</td>
-
           <td>${item.creditTerm.replace(/_/g, " ")}</td>
-
           <td>${item.routeName}</td>
-
-          
-
           <td>${timeObj.toLocaleDateString()}</td>
         `;
 
         tbody.appendChild(row);
-        startElapsedTimer(timerId, timeObj);
       });
 
+      updateAllElapsedTimers();
       startAutoScroll();
     }
 
-    /* Timer Under STORE TIME IN */
-    function startElapsedTimer(timerId, timeObj) {
-      function update() {
-        const diff = Date.now() - timeObj;
-        const mins = Math.floor(diff / 60000);
-        const hrs = Math.floor(mins / 60);
-
-        const elem = document.getElementById(timerId);
-        if (elem) elem.textContent = `Time elapsed since dispatched :${hrs}h ${mins % 60}m `;
-      }
-
-      update();
-      setInterval(update, 60000);
-    }
-
-    /* Bi-directional Smooth Auto Scroll */
+    /* FIXED AUTO SCROLL (REACHES TRUE BOTTOM) */
     let scrollInterval;
 
     function startAutoScroll() {
@@ -278,22 +252,28 @@
 
       if (container.scrollHeight <= container.clientHeight) return;
 
-      let scrollTop = 0;
+      const maxScroll = container.scrollHeight - container.clientHeight;
       let direction = 1;
 
       scrollInterval = setInterval(() => {
-        scrollTop += direction;
+        container.scrollTop += direction;
 
-        if (scrollTop >= container.scrollHeight - container.clientHeight) direction = -1;
-        if (scrollTop <= 0) direction = 1;
+        if (container.scrollTop >= maxScroll) {
+          container.scrollTop = maxScroll;
+          direction = -1;
+        }
 
-        container.scrollTo({ top: scrollTop, behavior: 'smooth' });
-      }, 50);
+        if (container.scrollTop <= 0) {
+          container.scrollTop = 0;
+          direction = 1;
+        }
+      }, 30);
     }
 
     /* Auto-refresh every 30 seconds */
     setInterval(fetchInvoices, 30000);
     fetchInvoices();
+
   </script>
 
 </body>
