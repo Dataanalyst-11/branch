@@ -18,7 +18,6 @@
         margin: 0;
     }
 
-    /* FIXED HEADER, SCROLLING BODY */
     .table-container {
         height: 85vh;
         overflow-y: auto;
@@ -90,6 +89,11 @@
 <script src="config.js"></script>
 
 <script>
+// ====== SAVE SCROLL POSITION & DIRECTION ======
+let savedScrollTop = 0;
+let savedDirection = 1;
+let currentDirection = 1;
+
 // =============== API CONFIG ===================
 let today = new Date();
 let yyyy = today.getFullYear();
@@ -139,6 +143,12 @@ function scoreClass(score) {
 // =============== LOAD & RENDER ===================
 async function loadPerformanceData() {
     const tbody = document.getElementById("performanceBody");
+    const container = document.querySelector(".table-container");
+
+    // Save scroll BEFORE reload
+    savedScrollTop = container.scrollTop;
+    savedDirection = currentDirection;
+
     tbody.innerHTML = "<tr><td colspan='9'>Loading...</td></tr>";
 
     try {
@@ -160,7 +170,6 @@ async function loadPerformanceData() {
         }
 
         attendants.forEach(a => a.performance = calculatePerformance(a));
-
         attendants.sort((a, b) => b.performance.score - a.performance.score);
 
         tbody.innerHTML = attendants.map(a => `
@@ -180,13 +189,16 @@ async function loadPerformanceData() {
 
         startAutoScroll();
 
+        // Restore scroll smoothly
+        container.scrollTop = savedScrollTop;
+
     } catch (e) {
         console.error(e);
         tbody.innerHTML = "<tr><td colspan='9' style='color:red;'>Error loading data</td></tr>";
     }
 }
 
-// =============== YOUR SCROLLING CRITERIA ===================
+// =============== AUTO SCROLL ===================
 let scrollInterval;
 
 function startAutoScroll() {
@@ -195,22 +207,33 @@ function startAutoScroll() {
 
     if (container.scrollHeight <= container.clientHeight) return;
 
-    let scrollTop = 0;
-    let direction = 1;
+    const speed = 40;
+    const step = 1;
+
+    let direction = savedDirection || 1;
+    let scrollTop = savedScrollTop || 0;
 
     scrollInterval = setInterval(() => {
-        scrollTop += direction;
 
-        if (scrollTop >= container.scrollHeight - container.clientHeight) direction = -1;
-        if (scrollTop <= 0) direction = 1;
+        scrollTop += direction * step;
+        container.scrollTo({ top: scrollTop, behavior: "smooth" });
 
-        container.scrollTo({
-            top: scrollTop,
-            behavior: "smooth"
-        });
-    }, 50);
+        currentDirection = direction;
+
+        if (scrollTop >= container.scrollHeight - container.clientHeight && direction === 1) {
+            direction = 0;
+            setTimeout(() => { direction = -1; }, 2000);
+        }
+
+        if (scrollTop <= 0 && direction === -1) {
+            direction = 1;
+        }
+
+    }, speed);
 }
 
+// =============== AUTO REFRESH EVERY 30 SECONDS ===================
+setInterval(loadPerformanceData, 30000);
 loadPerformanceData();
 </script>
 
