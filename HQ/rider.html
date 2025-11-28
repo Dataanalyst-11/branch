@@ -19,10 +19,10 @@
       margin: 0;
       padding: 12px;
       color: white;
-      top: 0;
-      z-index: 100;
       font-weight: bolder;
       position: sticky;
+      top: 0;
+      z-index: 10;
     }
 
     #summaryBar {
@@ -72,7 +72,9 @@
       transition: transform 0.2s ease-in-out;
     }
 
-    .card:hover { transform: scale(1.02); }
+    .card:hover {
+      transform: scale(1.02);
+    }
 
     .good {
       border-left-color: #008000 !important;
@@ -102,16 +104,23 @@
       border-bottom: 1px solid #eaeaea;
     }
 
-    .stat:last-child { border-bottom: none; }
+    .stat:last-child {
+      border-bottom: none;
+    }
 
-    .error-message, .loading {
+    .loading {
       text-align: center;
       font-weight: bold;
       margin-top: 20px;
+      color: #555;
     }
 
-    .error-message { color: red; }
-    .loading { color: #555; }
+    .footer {
+      margin-top: 20px;
+      font-size: 14px;
+      text-align: center;
+      opacity: 0.7;
+    }
   </style>
 </head>
 
@@ -132,159 +141,148 @@
     </div>
   </div>
 
+  <div class="footer">
+    Last updated: <span id="lastUpdated"></span>
+    <div>Designed and Managed by MIS.DPT</div>
+  </div>
+
+  <!-- External config -->
   <script src="config.js"></script>
 
-  <script>
-    const scrollSpeed = 40;
-    const scrollPause = 3000;
+<script>
 
-    let scrollAnimationId = null;
-    let scrollDirection = "down";
-    let lastTime = 0;
-    let pausedUntil = 0;
+// ===================== API SETUP =====================
 
-    let today = new Date();
-    let yyyy = today.getFullYear();
-    let mm = String(today.getMonth() + 1).padStart(2, "0");
-    let dd = String(today.getDate()).padStart(2, "0");
-    let formatted = `${yyyy}-${mm}-${dd}`;
+let today = new Date();
+let yyyy = today.getFullYear();
+let mm = String(today.getMonth() + 1).padStart(2, '0');
+let dd = String(today.getDate()).padStart(2, '0');
+let formatted = `${yyyy}-${mm}-${dd}`;
 
-    const API_URL =
-      window.API_CONFIG.API_URL +
-      `/driver-dispatch-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
+const API_URL = window.API_CONFIG.API_URL +
+  `/driver-dispatch-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
 
-    const API_TOKEN = window.API_CONFIG.API_TOKEN;
+const API_TOKEN = window.API_CONFIG.API_TOKEN;
 
-    async function loadRiders() {
-      const container = document.getElementById("ridersContainer");
-      container.innerHTML = "<div class='loading'>Loading riders data...</div>";
 
-      try {
-        const res = await fetch(API_URL, {
-          headers: {
-            "Authorization": API_TOKEN,
-            "Content-Type": "application/json"
-          }
-        });
+// ===================== SUMMARY UPDATE =====================
 
-        if (!res.ok) throw new Error("Server returned " + res.status);
+function updateSummary(riders) {
+  let delivered = 0, cleared = 0, assigned = 0;
 
-        const response = await res.json();
-        const riders = response.data || [];
+  riders.forEach(r => {
+    delivered += r.ordersDelivered;
+    cleared += r.ordersCleared;
+    assigned += r.ordersAssigned;
+  });
 
-        if (!riders.length) {
-          container.innerHTML = "<div class='error-message'>No rider data available.</div>";
-          return;
-        }
+  const pending = assigned - cleared;
 
-        updateSummary(riders);
-        renderRiders(riders);
+  document.getElementById("totalAssigned").textContent = `Total Assigned Invoices: ${assigned}`;
+  document.getElementById("totalDelivered").textContent = `Delivered Today: ${delivered}`;
+  document.getElementById("totalCleared").textContent = `Total Cleared Invoices: ${cleared}`;
+  document.getElementById("pendingClearance").textContent = `Pending Clearance: ${pending}`;
+}
 
-        restartScroll();
 
-      } catch (err) {
-        container.innerHTML =
-          `<div class='error-message'>Failed to load data.<br>${err.message}</div>`;
+// ===================== RENDER RIDERS =====================
+
+function renderRiders(riders) {
+  const container = document.getElementById("ridersContainer");
+  container.innerHTML = "";
+
+  riders.forEach(rider => {
+    const card = document.createElement("div");
+    card.className = "card " + (rider.ordersDelivered > rider.ordersCleared ? "bad" : "good");
+
+    card.innerHTML = `
+      <div class="rider-name">${rider.driverName}</div>
+      <div class="stat"><strong>Orders Assigned:</strong> ${rider.ordersAssigned}</div>
+      <div class="stat"><strong>Delivered:</strong> ${rider.ordersDelivered}</div>
+      <div class="stat"><strong>Cleared:</strong> ${rider.ordersCleared}</div>
+      <div class="stat"><strong>Failed:</strong> ${rider.ordersFailed}</div>
+      <div class="stat"><strong>Cancelled:</strong> ${rider.ordersCancelled}</div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+
+// ===================== LOAD DATA (NO SCROLL RESET) =====================
+
+async function loadPerformanceData() {
+  const container = document.getElementById("scrollWrapper");
+  const savedScroll = container.scrollTop;
+
+  try {
+    const res = await fetch(API_URL, {
+      headers: {
+        "Authorization": API_TOKEN,
+        "Content-Type": "application/json"
       }
+    });
+
+    if (!res.ok) throw new Error("API Error");
+
+    const json = await res.json();
+    const data = Array.isArray(json) ? json : json.data || [];
+
+    updateSummary(data);
+    renderRiders(data);
+
+    container.scrollTop = savedScroll;
+
+    document.getElementById("lastUpdated").textContent =
+      new Date().toLocaleTimeString();
+
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+
+// ===================== AUTO-SCROLL SYSTEM =====================
+
+let scrollInterval;
+let autoDirection = 1;  // 1 = down, -1 = up
+
+function startAutoScroll() {
+  const container = document.getElementById("scrollWrapper");
+  clearInterval(scrollInterval);
+
+  if (container.scrollHeight <= container.clientHeight) return;
+
+  const step = 1;
+  const speed = 40;
+
+  scrollInterval = setInterval(() => {
+    container.scrollTop += autoDirection * step;
+
+    if (container.scrollTop >= container.scrollHeight - container.clientHeight) {
+      autoDirection = 0;
+      setTimeout(() => autoDirection = -1, 2000);
     }
 
-    function updateSummary(riders) {
-      let delivered = 0, cleared = 0, assigned = 0;
-
-      riders.forEach(r => {
-        delivered += r.ordersDelivered;
-        cleared += r.ordersCleared;
-        assigned += r.ordersAssigned;
-      });
-
-      const pending = assigned - cleared;
-
-      document.getElementById("totalAssigned").textContent =
-        `Total Assigned Invoices: ${assigned}`;
-      document.getElementById("totalDelivered").textContent =
-        `Delivered Today: ${delivered}`;
-      document.getElementById("totalCleared").textContent =
-        `Total Cleared Invoices: ${cleared}`;
-      document.getElementById("pendingClearance").textContent =
-        `Pending Clearance: ${pending}`;
+    if (container.scrollTop <= 0 && autoDirection === -1) {
+      autoDirection = 1;
     }
 
-    function renderRiders(riders) {
-      const container = document.getElementById("ridersContainer");
-      container.innerHTML = "";
+  }, speed);
+}
 
-      riders.forEach(rider => {
-        const card = document.createElement("div");
-        card.className = "card " + (rider.ordersDelivered > rider.ordersCleared ? "bad" : "good");
 
-        card.innerHTML = `
-          <div class="rider-name">${rider.driverName}</div>
-          <div class="stat"><strong>Orders Assigned:</strong> ${rider.ordersAssigned}</div>
-          <div class="stat"><strong>Delivered:</strong> ${rider.ordersDelivered}</div>
-          <div class="stat"><strong>Cleared:</strong> ${rider.ordersCleared}</div>
-          <div class="stat"><strong>Failed:</strong> ${rider.ordersFailed}</div>
-          <div class="stat"><strong>Cancelled:</strong> ${rider.ordersCancelled}</div>
-        `;
-        container.appendChild(card);
-      });
-    }
+// ===================== INITIALIZATION =====================
 
-    /* AUTOSCROLL + REFRESH ONLY AT TOP */
-    function smoothScroll(now) {
-      if (!lastTime) lastTime = now;
-      const delta = now - lastTime;
-      lastTime = now;
+document.addEventListener("DOMContentLoaded", () => {
+  startAutoScroll();
+});
 
-      const scrollWrapper = document.getElementById("scrollWrapper");
+setInterval(loadPerformanceData, 30000);
+setInterval(startAutoScroll, 35000);
 
-      if (now < pausedUntil) {
-        scrollAnimationId = requestAnimationFrame(smoothScroll);
-        return;
-      }
+loadPerformanceData();
 
-      if (scrollDirection === "down") {
-        if (scrollWrapper.scrollTop + scrollWrapper.clientHeight <
-            scrollWrapper.scrollHeight - 1) {
-
-          scrollWrapper.scrollTop += scrollSpeed * (delta / 1000);
-
-        } else {
-          scrollDirection = "up";
-          pausedUntil = now + scrollPause;
-        }
-
-      } else if (scrollDirection === "up") {
-
-        if (scrollWrapper.scrollTop > 0) {
-          scrollWrapper.scrollTop -= scrollSpeed * (delta / 1000);
-        } else {
-
-          /* === REFRESH ONLY WHEN SCROLL REACHES THE TOP === */
-          loadRiders();
-
-          scrollDirection = "down";
-          pausedUntil = now + scrollPause;
-          return;
-        }
-      }
-
-      scrollAnimationId = requestAnimationFrame(smoothScroll);
-    }
-
-    function restartScroll() {
-      if (scrollAnimationId !== null) {
-        cancelAnimationFrame(scrollAnimationId);
-      }
-      lastTime = 0;
-      pausedUntil = 0;
-      setTimeout(() => {
-        scrollAnimationId = requestAnimationFrame(smoothScroll);
-      }, 1500);
-    }
-
-    /* Start once */
-    loadRiders();
-  </script>
+</script>
 
 </body>
 </html>
