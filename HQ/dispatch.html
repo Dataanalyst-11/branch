@@ -154,158 +154,165 @@
   <!-- Load the config first -->
   <script src="config.js"></script>
 
-  <script>
-    /* Build today's date */
-    let today = new Date();
-    let yyyy = today.getFullYear();
-    let mm = String(today.getMonth() + 1).padStart(2, '0');
-    let dd = String(today.getDate()).padStart(2, '0');
-    let formatted = `${yyyy}-${mm}-${dd}`;
+<script>
 
-    /* Test range */
-    let testDate = "2025-10-01";
-    let testEndDate = "2025-11-04";
+// ====== SAVE SCROLL POSITION & DIRECTION ======
+let savedScrollTop = 0;
+let savedDirection = 1;
+let currentDirection = 1;
 
-    // Use central config instead of hardcoding
-    //683976e3994a072a600cbd7a-Headoofice
-    // ================================
-    const API_URL = window.API_CONFIG.API_URL+`list?status=PENDING_DISPATCH&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
-    const API_TOKEN = window.API_CONFIG.API_TOKEN;
+let scrollInterval;
 
-    // ================================
-    // Fetch API Data
-    // ================================
-    async function fetchInvoices() {
-      try {
-        const response = await fetch(API_URL, {
-          headers: {
-            "Authorization": API_TOKEN,
-            "Content-Type": "application/json"
-          }
-        });
+// =============== API CONFIG ===================
+let today = new Date();
+let yyyy = today.getFullYear();
+let mm = String(today.getMonth() + 1).padStart(2, '0');
+let dd = String(today.getDate()).padStart(2, '0');
+let formatted = `${yyyy}-${mm}-${dd}`;
 
-        const result = await response.json();
+const API_URL = window.API_CONFIG.API_URL +
+  `list?status=PENDING_DISPATCH&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
+const API_TOKEN = window.API_CONFIG.API_TOKEN;
 
-        if (result.status && result.data) {
-          displayInvoices(result.data);
-          document.getElementById("lastUpdated").textContent =
-            new Date().toLocaleTimeString();
-        }
-      } catch (err) {
-        console.error("Fetch failed:", err);
+
+// =============== TIMER UNDER CONFIRM TIME ===============
+function startElapsedTimer(timerId, timeObj) {
+  function update() {
+    const diff = Date.now() - timeObj;
+    const mins = Math.floor(diff / 60000);
+    const hrs = Math.floor(mins / 60);
+
+    const elem = document.getElementById(timerId);
+    if (elem) elem.textContent = `Waiting: ${hrs}h ${mins % 60}m`;
+  }
+
+  update();
+  setInterval(update, 60000);
+}
+
+
+// =============== ROW COLOR LOGIC ===============
+function getRowClass(diffMinutes) {
+  if (diffMinutes <= 25) return "green-row";
+  if (diffMinutes <= 50) return "yellow-row";
+  return "red-row";
+}
+
+
+// =============== DISPLAY INVOICES ===============
+function displayInvoices(data) {
+  const tbody = document.querySelector("#invoiceTable tbody");
+  tbody.innerHTML = "";
+
+  document.getElementById("summary").textContent =
+    `Total Invoices at Dispatch: ${data.length}`;
+
+  data.forEach(item => {
+    const row = document.createElement("tr");
+
+    const timeObj = new Date(item.orderConfirmationCheckoutAt);
+    const diffMs = Date.now() - timeObj.getTime();
+    const diffMinutes = diffMs / 60000;
+
+    row.classList.add(getRowClass(diffMinutes));
+
+    const displayTime = timeObj.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+
+    const timerId = `timer-${item.id}`;
+
+    row.innerHTML = `
+      <td>${item.invoiceNumber}</td>
+      <td>${displayTime}<br><span class="timer" id="${timerId}"></span></td>
+      <td>${item.customerName}</td>
+      <td>${item.creditTerm.replace(/_/g, " ")}</td>
+      <td>${item.routeName}</td>
+      <td>${timeObj.toLocaleDateString()}</td>
+    `;
+
+    tbody.appendChild(row);
+    startElapsedTimer(timerId, timeObj);
+  });
+
+  // Restore scroll & restart auto-scroll
+  const container = document.querySelector(".table-container");
+  container.scrollTop = savedScrollTop;
+  startAutoScroll();
+}
+
+
+// =============== LOAD DATA (WITH SCROLL RESTORE) ===============
+async function loadPerformanceData() {
+  const container = document.querySelector(".table-container");
+  savedScrollTop = container.scrollTop;
+  savedDirection = currentDirection;
+
+  try {
+    const response = await fetch(API_URL, {
+      headers: {
+        "Authorization": API_TOKEN,
+        "Content-Type": "application/json"
       }
+    });
+
+    if (!response.ok) throw new Error("API Error " + response.status);
+
+    const json = await response.json();
+    const data = Array.isArray(json) ? json : json.data || [];
+
+    displayInvoices(data);
+
+    document.getElementById("lastUpdated").textContent =
+      new Date().toLocaleTimeString();
+
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+
+// =============== AUTO SCROLL (BOUNCE EFFECT) ===============
+function startAutoScroll() {
+  const container = document.querySelector(".table-container");
+  clearInterval(scrollInterval);
+
+  if (container.scrollHeight <= container.clientHeight) return;
+
+  const step = 1;
+  const speed = 40;
+
+  let direction = savedDirection;
+  let scrollTop = savedScrollTop;
+
+  scrollInterval = setInterval(() => {
+    scrollTop += direction * step;
+    container.scrollTo({ top: scrollTop, behavior: "smooth" });
+
+    currentDirection = direction;
+
+    // Bottom pause then go up
+    if (scrollTop >= container.scrollHeight - container.clientHeight && direction === 1) {
+      direction = 0;
+      setTimeout(() => direction = -1, 2000);
     }
 
-    /* Render Rows */
-    function displayInvoices(data) {
-      const tbody = document.querySelector("#invoiceTable tbody");
-      tbody.innerHTML = "";
-
-      document.getElementById("summary").textContent =
-        `Total Invoices at Dispatch: ${data.length}`;
-
-      data.forEach(item => {
-        const row = document.createElement("tr");
-
-        // Using Confirmation Time Out
-        const timeObj = new Date(item.orderConfirmationCheckoutAt);
-
-        const diffMs = Date.now() - timeObj.getTime();
-        const diffMinutes = diffMs / 60000;
-
-        /* Row color logic */
-        if (diffMinutes <= 25) row.classList.add("green-row");
-        else if (diffMinutes <= 50) row.classList.add("yellow-row");
-        else row.classList.add("red-row");
-
-        const timeString = timeObj.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit"
-        });
-
-        const timerId = `timer-${item.id}`;
-
-        /* Fully aligned row (Variable names as appearing id DB)*/
-        row.innerHTML = `
-          <td>${item.invoiceNumber}</td>
-
-          <td>
-            ${timeString}
-            <span class="timer" id="${timerId}"></span>
-          </td>
-
-          <td>${item.customerName}</td>
-
-          <td>${item.creditTerm.replace(/_/g, " ")}</td>
-
-          <td>${item.routeName}</td>
-
-          
-
-          <td>${timeObj.toLocaleDateString()}</td>
-        `;
-
-        tbody.appendChild(row);
-        startElapsedTimer(timerId, timeObj);
-      });
-
-      startAutoScroll();
+    // Top then go down
+    if (scrollTop <= 0 && direction === -1) {
+      direction = 1;
     }
 
-    /* Timer Under STORE TIME IN */
-    function startElapsedTimer(timerId, timeObj) {
-      function update() {
-        const diff = Date.now() - timeObj;
-        const mins = Math.floor(diff / 60000);
-        const hrs = Math.floor(mins / 60);
+  }, speed);
+}
 
-        const elem = document.getElementById(timerId);
-        if (elem) elem.textContent = `Waiting for :${hrs}h ${mins % 60}m `;
-      }
 
-      update();
-      setInterval(update, 60000);
-     }
+// =============== AUTO REFRESH EVERY 30 SECONDS ===============
+setInterval(loadPerformanceData, 30000);
+loadPerformanceData();
 
-     /* Bi-directional Smooth Auto Scroll */
-     let scrollInterval;
+</script>
 
-     function startAutoScroll() {
-       const container = document.querySelector(".table-container");
-       clearInterval(scrollInterval);
-
-       if (container.scrollHeight <= container.clientHeight) return;
-
-       const speed = 15;      // scroll interval
-       const step = 1;        // pixel movement per tick (same for up & down)
-
-       let direction = 1;     // 1 = down, -1 = up, 0 = pause
-       let scrollTop = 0;
-
-       scrollInterval = setInterval(() => {
-         scrollTop += direction * step;
-
-         container.scrollTo({ top: scrollTop, behavior: "smooth" });
-
-         // reached bottom → pause 2 seconds → go up
-         if (scrollTop >= container.scrollHeight - container.clientHeight && direction === 1) {
-         direction = 0; // stop scrolling
-         setTimeout(() => {
-         direction = -1; // then go upward
-        }, 2000);
-       }
-
-       // reached top → go down again
-       if (scrollTop <= 0 && direction === -1) {
-       direction = 1; // start scrolling down
-       } 
-       }, speed);
-      }
-
-     /* Auto-refresh every 30 seconds */
-     setInterval(fetchInvoices, 30000);
-     fetchInvoices();
-  </script>
 
 </body>
 </html>
