@@ -131,6 +131,26 @@ function formatInvoiceForSpeech(inv) {
   return `${prefix} ${last4}`;
 }
 
+/*************** FEMALE VOICE SETUP ***************/
+let femaleVoice = null;
+
+function loadVoices() {
+  const voices = speechSynthesis.getVoices();
+
+  femaleVoice =
+    voices.find(v => v.name.includes("Google UK English Female")) ||
+    voices.find(v => v.name.includes("Google US English Female")) ||
+    voices.find(v => v.name.toLowerCase().includes("female")) ||
+    voices.find(v => v.name.toLowerCase().includes("woman")) ||
+    voices.find(v => v.name.includes("Samantha")) ||  // Safari female
+    voices[0];
+
+  console.log("Female voice selected:", femaleVoice?.name);
+}
+
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
 /*************** Browser-Required TTS Activation ***************/
 let ttsActivated = false;
 
@@ -175,6 +195,12 @@ function speakNextInQueue() {
 
   const message = speakQueue.shift();
   const utter = new SpeechSynthesisUtterance(message);
+
+  // ➤ APPLY FEMALE VOICE HERE
+  if (femaleVoice) utter.voice = femaleVoice;
+
+  utter.pitch = 1;
+  utter.rate = 1;
 
   isSpeaking = true;
   utter.onend = () => {
@@ -329,7 +355,9 @@ document.addEventListener("DOMContentLoaded", () => {
 /*************** Auto Refresh ***************/
 setInterval(fetchInvoices, 30000);
 fetchInvoices();
+
 </script>
+
 
 </body>
 </html>
