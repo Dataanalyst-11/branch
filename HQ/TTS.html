@@ -262,6 +262,7 @@ function scanDelayedInvoices(data) {
 
     if (diffMinutes > 20) {
       const delay = Math.floor(diffMinutes - 20);
+      if (delay < 1) return;
 
       const spokenInvoice = formatInvoiceForSpeech(item.invoiceNumber);
 
