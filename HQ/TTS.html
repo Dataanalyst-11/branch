@@ -121,6 +121,16 @@
   <script src="config.js"></script>
 
 <script>
+
+/*************** Short Invoice Speech Formatter ***************/
+function formatInvoiceForSpeech(inv) {
+  const prefix = inv.slice(0, 3).split("").join(" ");
+  const last4 = inv.slice(-4).split("").map(n =>
+    ["zero","one","two","three","four","five","six","seven","eight","nine"][n]
+  ).join(" ");
+  return `${prefix} ${last4}`;
+}
+
 /*************** Browser-Required TTS Activation ***************/
 let ttsActivated = false;
 
@@ -132,12 +142,10 @@ function activateTTS() {
     ttsActivated = true;
     console.log("TTS Activated");
 
-    // Immediately scan all delayed invoices on activation
     if (window._latestData) scanDelayedInvoices(window._latestData);
   }
 }
 
-// Activate TTS on ANY user gesture
 window.addEventListener("click", activateTTS);
 window.addEventListener("keydown", activateTTS);
 window.addEventListener("touchstart", activateTTS);
@@ -194,8 +202,7 @@ async function fetchInvoices() {
     const result = await response.json();
 
     if (result.status && result.data) {
-      window._latestData = result.data; // Save for activation scan
-
+      window._latestData = result.data;
       displayInvoices(result.data);
 
       if (ttsActivated) scanDelayedInvoices(result.data);
@@ -255,9 +262,10 @@ function scanDelayedInvoices(data) {
 
     if (diffMinutes > 20) {
       const delay = Math.floor(diffMinutes - 20);
-      const msg = `${item.storePickerName || "staff"}, invoice ${
-        item.invoiceNumber
-      } has delayed for ${delay} minute${delay !== 1 ? "s" : ""}.`;
+
+      const spokenInvoice = formatInvoiceForSpeech(item.invoiceNumber);
+
+      const msg = `${item.storePickerName || "staff"}, invoice ${spokenInvoice} has delayed for ${delay} minute${delay !== 1 ? "s" : ""}, kindly be fast.`;
 
       queueAlert(msg);
     }
