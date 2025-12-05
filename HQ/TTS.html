@@ -357,6 +357,36 @@ setInterval(fetchInvoices, 30000);
 fetchInvoices();
 
 </script>
+  <script>
+/*************** Add TTS Start Button ***************/
+document.addEventListener("DOMContentLoaded", () => {
+  const ttsBtn = document.createElement("button");
+  ttsBtn.id = "ttsBtn";
+  ttsBtn.textContent = "▶️ Start Voice Alerts";
+  ttsBtn.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    padding: 6px 12px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    z-index: 1000;
+  `;
+  document.body.appendChild(ttsBtn);
+
+  ttsBtn.addEventListener("click", () => {
+    activateTTS();
+    ttsBtn.textContent = "🎧 Voice Active";
+    ttsBtn.style.background = "#2196F3";
+    ttsBtn.disabled = true;
+  });
+});
+</script>
 
 
 </body>
