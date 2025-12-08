@@ -168,11 +168,21 @@ let today = new Date();
 let yyyy = today.getFullYear();
 let mm = String(today.getMonth() + 1).padStart(2, '0');
 let dd = String(today.getDate()).padStart(2, '0');
-let formatted = `${yyyy}-${mm}-${dd}`;
+let formattedEnd = `${yyyy}-${mm}-${dd}`;  // today
+
+// Example: pull data for the past 7 days
+let pastDate = new Date();
+pastDate.setDate(today.getDate() - 7);
+let pastY = pastDate.getFullYear();
+let pastM = String(pastDate.getMonth() + 1).padStart(2, '0');
+let pastD = String(pastDate.getDate()).padStart(2, '0');
+let formattedStart = `${pastY}-${pastM}-${pastD}`;
 
 const API_URL = window.API_CONFIG.API_URL +
-  `list?status=PENDING_DISPATCH&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
+  `list?status=PENDING_DISPATCH&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formattedStart}&endDate=${formattedEnd}`;
+
 const API_TOKEN = window.API_CONFIG.API_TOKEN;
+
 
 
 // =============== TIMER UNDER CONFIRM TIME ===============
