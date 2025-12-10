@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -39,14 +38,15 @@
 
   <div class="text-center text-sm text-gray-500 pb-4" id="lastUpdated"></div>
 
+
+  <!-- SCRIPT -->
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbyaTT7YsxkYE1W2kRK4Lz5d0rcWoVB5dwnAy-BVi5Jiryg2DgbckGEF_5XKznTVyu28/exec';
+    const API_URL =
+      'https://script.google.com/macros/s/AKfycbyaTT7YsxkYE1W2kRK4Lz5d0rcWoVB5dwnAy-BVi5Jiryg2DgbckGEF_5XKznTVyu28/exec';
 
-    let scrollAnimationId = null; // Track the current scroll animation
-    let scrollDirection = 'down';
-    const scrollSpeed = 1.5;
-    const scrollPause = 3000;
-
+    // ============================
+    // FETCH RIDER DATA
+    // ============================
     async function fetchRiderData() {
       try {
         const res = await fetch(API_URL);
@@ -66,13 +66,16 @@
 
         renderDashboard(riderData);
       } catch (err) {
-        console.error('Error fetching data:', err);
+        console.error("Error fetching data:", err);
       }
     }
 
+    // ============================
+    // RENDER UI
+    // ============================
     function renderDashboard(riders) {
-      const riderGrid = document.getElementById('riderGrid');
-      riderGrid.innerHTML = '';
+      const riderGrid = document.getElementById("riderGrid");
+      riderGrid.innerHTML = "";
 
       let totalDelivered = 0;
       let totalPending = 0;
@@ -81,70 +84,81 @@
         totalDelivered += rider.delivered;
         totalPending += rider.pending;
 
-        const card = document.createElement('div');
+        const card = document.createElement("div");
         const isGreen = rider.pending === 0;
-        card.className = `card rounded-2xl p-4 ${isGreen ? 'bg-green-600 border-green-600 text-black font-bold' : 'bg-pink-700 border-pink-700 text-white'} border-4`;
+
+        card.className =
+          `card rounded-2xl p-4 ${isGreen ? 'bg-green-600 text-black font-bold' : 'bg-pink-700 text-white'} border-4`;
 
         card.innerHTML = `
           <h2 class="text-xl font-bold mb-2">${rider.name}</h2>
-          <p class="text-lg">✅ Delivered: <span class="font-bold">${rider.delivered}</span></p>
-          <p class="text-lg">🔴 Pending Clearance: <span class="font-bold">${rider.pending}</span></p>
+          <p class="text-lg">Delivered: <span class="font-bold">${rider.delivered}</span></p>
+          <p class="text-lg">Pending Clearance: <span class="font-bold">${rider.pending}</span></p>
         `;
 
         riderGrid.appendChild(card);
       });
 
-      document.getElementById('totalDelivered').textContent = `Delivered Today: ${totalDelivered}`;
-      document.getElementById('totalPending').textContent = `Pending Clearance: ${totalPending}`;
+      document.getElementById("totalDelivered").textContent =
+        `Delivered Today: ${totalDelivered}`;
+      document.getElementById("totalPending").textContent =
+        `Pending Clearance: ${totalPending}`;
 
       const now = new Date();
-      document.getElementById('currentDate').textContent = `Date: ${now.toLocaleDateString()}`;
-      document.getElementById('lastUpdated').textContent = `Last Updated: ${now.toLocaleTimeString()}`;
+      document.getElementById("currentDate").textContent =
+        `Date: ${now.toLocaleDateString()}`;
+      document.getElementById("lastUpdated").textContent =
+        `Last Updated: ${now.toLocaleTimeString()}`;
     }
 
-    function scrollStep() {
-      const scrollWrapper = document.getElementById('scrollWrapper');
+    // ============================
+    // PERFECTED AUTO-SCROLL LOOP
+    // ============================
+    let scrolling = false;
 
-      if (scrollDirection === 'down') {
-        if (scrollWrapper.scrollTop + scrollWrapper.clientHeight < scrollWrapper.scrollHeight) {
-          scrollWrapper.scrollTop += scrollSpeed;
-          scrollAnimationId = requestAnimationFrame(scrollStep);
-        } else {
-          scrollDirection = 'up';
-          setTimeout(() => {
-            scrollAnimationId = requestAnimationFrame(scrollStep);
-          }, scrollPause);
+    async function startAutoScroll() {
+      if (scrolling) return;
+      scrolling = true;
+
+      const container = document.getElementById("scrollWrapper");
+      const step = 1;
+      const speed = 20;
+
+      while (true) {
+
+        // SCROLL DOWN
+        while (container.scrollTop + container.clientHeight < container.scrollHeight - 1) {
+          container.scrollTop += step;
+          await new Promise(r => setTimeout(r, speed));
         }
-      } else {
-        if (scrollWrapper.scrollTop > 0) {
-          scrollWrapper.scrollTop -= scrollSpeed;
-          scrollAnimationId = requestAnimationFrame(scrollStep);
-        } else {
-          scrollDirection = 'down';
-          setTimeout(() => {
-            scrollAnimationId = requestAnimationFrame(scrollStep);
-          }, scrollPause);
+
+        // LOCK BOTTOM
+        container.scrollTop = container.scrollHeight - container.clientHeight;
+        await new Promise(r => setTimeout(r, 3000));
+
+        // SCROLL UP
+        while (container.scrollTop > 1) {
+          container.scrollTop -= step;
+          await new Promise(r => setTimeout(r, speed));
         }
+
+        // LOCK TOP
+        container.scrollTop = 0;
+        await new Promise(r => setTimeout(r, 3000));
       }
     }
 
-    function restartScroll() {
-      if (scrollAnimationId !== null) {
-        cancelAnimationFrame(scrollAnimationId); // Cancel previous animation
-      }
-      setTimeout(() => {
-        scrollAnimationId = requestAnimationFrame(scrollStep);
-      }, 2000); // 2 seconds delay to restart
-    }
-
-    window.addEventListener('load', () => {
-      fetchRiderData();
-      restartScroll();
-      setInterval(() => {
-        fetchRiderData();
-        restartScroll();
-      }, 15000); // Refresh data every 15 seconds
+    // ============================
+    // INITIALIZATION
+    // ============================
+    document.addEventListener("DOMContentLoaded", async () => {
+      await fetchRiderData();
+      startAutoScroll();
     });
+
+    // Refresh data every 30 seconds (scroll unaffected)
+    setInterval(fetchRiderData, 30000);
   </script>
+
 </body>
 </html>
