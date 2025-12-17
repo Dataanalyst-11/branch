@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Store Performance Dashboard</title>
+
+<style>
+    body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        font-weight: bolder;
+        background: #f4f6f9;
+        margin: 0;
+        overflow: hidden;
+    }
+
+    h1 {
+        text-align: center;
+        padding: 18px;
+        background: #34495e;
+        color: white;
+        margin: 0;
+        font-size: 22px;
+    }
+
+    #clock {
+        text-align: center;
+        font-size: 1.4rem;
+        margin: 8px 0 16px;
+        color: #2c3e50;
+    }
+
+    .table-container {
+        height: calc(100vh - 180px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        width: 95%;
+        margin: 0 auto;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    }
+
+    th, td {
+        padding: 12px;
+        text-align: center;
+        border: 1px solid #ddd;
+        font-size: 14px;
+    }
+
+    th {
+        background: #2c3e50;
+        color: white;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .score-high { background: #27ae60; color: white; }
+    .score-medium { background: #f1c40f; color: #000; }
+    .score-low { background: #e74c3c; color: white; }
+
+    .footer {
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+        background: #ecf0f1;
+        border-top: 2px solid #ccc;
+        text-align: center;
+        font-size: 13px;
+        padding: 8px 0;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>Store Performance Report</h1>
+<div id="clock"></div>
+
+<div class="table-container" id="scrollContainer">
+    <table>
+        <thead>
+            <tr>
+                <th>Store Attendant</th>
+                <th>Branch</th>
+                <th>Total Orders</th>
+                <th>Line Items</th>
+                <th>Avg Items / Order</th>
+                <th>Orders / Hour</th>
+                <th>Efficiency Score (%)</th>
+            </tr>
+        </thead>
+        <tbody id="performanceBody"></tbody>
+    </table>
+</div>
+
+<div class="footer">
+    <div>Last updated: <span id="lastUpdated">--</span></div>
+    <div>Designed and Managed by MIS.DPT</div>
+</div>
+
+<script src="config.js"></script>
+
+<script>
+/* ================= CLOCK ================= */
+function updateClock() {
+    const now = new Date();
+    document.getElementById("clock").textContent =
+        now.toLocaleDateString(undefined, {
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "numeric"
+        }) + " – " +
+        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+updateClock();
+setInterval(updateClock, 60000);
+
+/* ================= API ================= */
+const today = new Date().toISOString().split("T")[0];
+const API_URL =
+    API_CONFIG.API_URL +
+    `store-picker-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${today}`;
+const API_TOKEN = API_CONFIG.API_TOKEN;
+
+/* ================= PERCENTILE-BASED SCORING ================= */
+function calculatePercentilePerformance(attendants) {
+    // raw metrics arrays
+    const allOrdersPerHour = attendants.map(a => (a.numberOfOrders || 0) / 8);
+    const allAvgItems      = attendants.map(a => a.numberOfOrders ? (a.numberOfLineItems || 0) / a.numberOfOrders : 0);
+    const allAvgOrderValue = attendants.map(a => a.numberOfOrders ? (a.orderAmount || 0) / a.numberOfOrders : 0);
+
+    function percentileRank(arr, value) {
+        if (arr.length === 0) return 0;
+        let count = arr.filter(v => v <= value).length;
+        return (count / arr.length) * 100;
+    }
+
+    attendants.forEach(a => {
+        const ordersPerHour = (a.numberOfOrders || 0) / 8;
+        const avgItems = a.numberOfOrders ? (a.numberOfLineItems || 0) / a.numberOfOrders : 0;
+        const avgValue = a.numberOfOrders ? (a.orderAmount || 0) / a.numberOfOrders : 0;
+
+        const scoreOrders = percentileRank(allOrdersPerHour, ordersPerHour);
+        const scoreItems  = percentileRank(allAvgItems, avgItems);
+        const scoreValue  = percentileRank(allAvgOrderValue, avgValue);
+
+        a.performance = {
+            avgItemsPerOrder: avgItems,
+            avgOrderValue: avgValue,
+            ordersPerHour: ordersPerHour,
+            score: (scoreOrders*0.4 + scoreItems*0.3 + scoreValue*0.3)
+        };
+    });
+}
+
+function scoreClass(score) {
+    if (score >= 80) return "score-high";
+    if (score >= 50) return "score-medium";
+    return "score-low";
+}
+
+/* ================= CONTINUOUS SMOOTH SCROLL WITH PAUSE ================= */
+let scrollRAF;
+let direction = 1;
+const speed = 0.4;
+let pauseCounter = 0; 
+const pauseFrames = 120; // 2-second pause at top/bottom
+
+function startScrollLoop() {
+    const container = document.getElementById("scrollContainer");
+
+    function step() {
+        const maxScroll = container.scrollHeight - container.clientHeight;
+
+        if (maxScroll > 0) {
+            let next = container.scrollTop + speed * direction;
+
+            // bottom
+            if (next >= maxScroll) {
+                next = maxScroll;
+                if (pauseCounter < pauseFrames) {
+                    pauseCounter++;
+                } else {
+                    direction = -1;
+                    pauseCounter = 0;
+                }
+            }
+            // top
+            else if (next <= 0) {
+                next = 0;
+                if (pauseCounter < pauseFrames) {
+                    pauseCounter++;
+                } else {
+                    direction = 1;
+                    pauseCounter = 0;
+                }
+            } else {
+                pauseCounter = 0;
+            }
+
+            container.scrollTop = next;
+        }
+
+        scrollRAF = requestAnimationFrame(step);
+    }
+
+    step();
+}
+
+/* ================= DATA LOAD (NON-DESTRUCTIVE) ================= */
+async function loadPerformanceData() {
+    const container = document.getElementById("scrollContainer");
+    const tbody = document.getElementById("performanceBody");
+    const savedScrollTop = container.scrollTop;
+
+    try {
+        const res = await fetch(API_URL, {
+            headers: {
+                "Authorization": API_TOKEN,
+                "Content-Type": "application/json"
+            }
+        });
+
+        const data = await res.json();
+        const attendants = Array.isArray(data) ? data : data.data || [];
+
+        calculatePercentilePerformance(attendants);
+        attendants.sort((a, b) => b.performance.score - a.performance.score);
+
+        tbody.innerHTML = attendants.map(a => `
+            <tr class="${scoreClass(a.performance.score)}">
+                <td>${a.storePickerName}</td>
+                <td>${a.orgBranchName}</td>
+                <td>${a.numberOfOrders}</td>
+                <td>${a.numberOfLineItems}</td>
+                <td>${a.performance.avgItemsPerOrder.toFixed(2)}</td>
+                <td>${a.performance.ordersPerHour.toFixed(2)}</td>
+                <td>${a.performance.score.toFixed(1)}%</td>
+            </tr>
+        `).join("");
+
+        container.scrollTop = Math.min(savedScrollTop, container.scrollHeight);
+
+        document.getElementById("lastUpdated").textContent =
+            new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+/* ================= START DASHBOARD ================= */
+startScrollLoop();
+loadPerformanceData();
+setInterval(loadPerformanceData, 60000);
+
+window.addEventListener("beforeunload", () => {
+    cancelAnimationFrame(scrollRAF);
+});
+</script>
+
+</body>
+</html>
