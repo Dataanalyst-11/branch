@@ -135,7 +135,7 @@ function calculatePerformance(attendant) {
 }
 
 function scoreClass(score) {
-  if (score >= 80) return "score-high";
+  if (score >= 70) return "score-high";
   if (score >= 50) return "score-medium";
   return "score-low";
 }
@@ -232,8 +232,8 @@ function startAutoScroll() {
     }, speed);
 }
 
-// =============== AUTO REFRESH EVERY 30 SECONDS ===================
-setInterval(loadPerformanceData, 30000);
+// =============== AUTO REFRESH EVERY 60 SECONDS ===================
+setInterval(loadPerformanceData, 60000);
 loadPerformanceData();
 </script>
 
