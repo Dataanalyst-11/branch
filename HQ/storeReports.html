@@ -5,12 +5,16 @@
 <title>Store Performance Dashboard</title>
 
 <style>
+    html, body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+    }
+
     body {
         font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: bolder;
         background: #f4f6f9;
-        margin: 0;
-        overflow: hidden;
     }
 
     h1 {
@@ -30,11 +34,12 @@
     }
 
     .table-container {
-        height: calc(100vh - 180px);
+        height: calc(100% - 180px); /* SMART-TV SAFE */
         overflow-y: auto;
         overflow-x: hidden;
         width: 95%;
         margin: 0 auto;
+        -webkit-overflow-scrolling: auto;
     }
 
     table {
@@ -128,17 +133,15 @@ const API_URL =
     `store-picker-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${today}`;
 const API_TOKEN = API_CONFIG.API_TOKEN;
 
-/* ================= PERCENTILE-BASED SCORING ================= */
+/* ================= PERCENTILE SCORING ================= */
 function calculatePercentilePerformance(attendants) {
-    // raw metrics arrays
     const allOrdersPerHour = attendants.map(a => (a.numberOfOrders || 0) / 8);
     const allAvgItems      = attendants.map(a => a.numberOfOrders ? (a.numberOfLineItems || 0) / a.numberOfOrders : 0);
     const allAvgOrderValue = attendants.map(a => a.numberOfOrders ? (a.orderAmount || 0) / a.numberOfOrders : 0);
 
     function percentileRank(arr, value) {
-        if (arr.length === 0) return 0;
-        let count = arr.filter(v => v <= value).length;
-        return (count / arr.length) * 100;
+        if (!arr.length) return 0;
+        return (arr.filter(v => v <= value).length / arr.length) * 100;
     }
 
     attendants.forEach(a => {
@@ -146,15 +149,13 @@ function calculatePercentilePerformance(attendants) {
         const avgItems = a.numberOfOrders ? (a.numberOfLineItems || 0) / a.numberOfOrders : 0;
         const avgValue = a.numberOfOrders ? (a.orderAmount || 0) / a.numberOfOrders : 0;
 
-        const scoreOrders = percentileRank(allOrdersPerHour, ordersPerHour);
-        const scoreItems  = percentileRank(allAvgItems, avgItems);
-        const scoreValue  = percentileRank(allAvgOrderValue, avgValue);
-
         a.performance = {
             avgItemsPerOrder: avgItems,
-            avgOrderValue: avgValue,
-            ordersPerHour: ordersPerHour,
-            score: (scoreOrders*0.4 + scoreItems*0.3 + scoreValue*0.3)
+            ordersPerHour,
+            score:
+                percentileRank(allOrdersPerHour, ordersPerHour) * 0.4 +
+                percentileRank(allAvgItems, avgItems) * 0.3 +
+                percentileRank(allAvgOrderValue, avgValue) * 0.3
         };
     });
 }
@@ -165,55 +166,50 @@ function scoreClass(score) {
     return "score-low";
 }
 
-/* ================= CONTINUOUS SMOOTH SCROLL WITH PAUSE ================= */
-let scrollRAF;
+/* ================= SMART-TV SAFE AUTO SCROLL ================= */
+let scrollTimer = null;
 let direction = 1;
-const speed = 0.4;
-let pauseCounter = 0; 
-const pauseFrames = 120; // 2-second pause at top/bottom
+const speed = 1;           // pixels per tick
+const tickRate = 20;       // ms
+const pauseDuration = 2000;
 
 function startScrollLoop() {
     const container = document.getElementById("scrollContainer");
+    clearInterval(scrollTimer);
 
-    function step() {
+    function tick() {
         const maxScroll = container.scrollHeight - container.clientHeight;
+        if (maxScroll <= 0) return;
 
-        if (maxScroll > 0) {
-            let next = container.scrollTop + speed * direction;
+        let next = container.scrollTop + speed * direction;
 
-            // bottom
-            if (next >= maxScroll) {
-                next = maxScroll;
-                if (pauseCounter < pauseFrames) {
-                    pauseCounter++;
-                } else {
-                    direction = -1;
-                    pauseCounter = 0;
-                }
-            }
-            // top
-            else if (next <= 0) {
-                next = 0;
-                if (pauseCounter < pauseFrames) {
-                    pauseCounter++;
-                } else {
-                    direction = 1;
-                    pauseCounter = 0;
-                }
-            } else {
-                pauseCounter = 0;
-            }
-
-            container.scrollTop = next;
+        if (next >= maxScroll) {
+            container.scrollTop = maxScroll;
+            clearInterval(scrollTimer);
+            setTimeout(() => {
+                direction = -1;
+                scrollTimer = setInterval(tick, tickRate);
+            }, pauseDuration);
+            return;
         }
 
-        scrollRAF = requestAnimationFrame(step);
+        if (next <= 0) {
+            container.scrollTop = 0;
+            clearInterval(scrollTimer);
+            setTimeout(() => {
+                direction = 1;
+                scrollTimer = setInterval(tick, tickRate);
+            }, pauseDuration);
+            return;
+        }
+
+        container.scrollTop = next;
     }
 
-    step();
+    scrollTimer = setInterval(tick, tickRate);
 }
 
-/* ================= DATA LOAD (NON-DESTRUCTIVE) ================= */
+/* ================= DATA LOAD ================= */
 async function loadPerformanceData() {
     const container = document.getElementById("scrollContainer");
     const tbody = document.getElementById("performanceBody");
@@ -246,7 +242,6 @@ async function loadPerformanceData() {
         `).join("");
 
         container.scrollTop = Math.min(savedScrollTop, container.scrollHeight);
-
         document.getElementById("lastUpdated").textContent =
             new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -255,14 +250,10 @@ async function loadPerformanceData() {
     }
 }
 
-/* ================= START DASHBOARD ================= */
+/* ================= START ================= */
 startScrollLoop();
 loadPerformanceData();
 setInterval(loadPerformanceData, 60000);
-
-window.addEventListener("beforeunload", () => {
-    cancelAnimationFrame(scrollRAF);
-});
 </script>
 
 </body>
