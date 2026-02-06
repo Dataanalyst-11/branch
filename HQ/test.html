@@ -1,80 +1,81 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Live-Confirmation Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live-Confirmation Dashboard</title>
 
-<style>
-* { box-sizing: border-box; }
+  <style>
+    * { box-sizing: border-box; }
 
-body {
-  font-family: Arial, sans-serif;
-  font-weight: bold;
-  background: #fefefe;
-  margin: 0;
-  height: 100vh;
-  overflow: hidden;
-}
+    body {
+      font-family: Arial, sans-serif;
+      font-weight: bold;
+      background: #fefefe;
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
 
-h2 {
-  background: #1270c2;
-  text-align: center;
-  margin: 0;
-  padding: 12px;
-  color: white;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
+    h2 {
+      background: #1270c2;
+      text-align: center;
+      margin: 0;
+      padding: 12px;
+      color: white;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
 
-#summary {
-  text-align: center;
-  background: #1270c2;
-  font-size: 1.2em;
-  padding: 8px;
-  color: white;
-  position: sticky;
-  top: 52px;
-  z-index: 100;
-}
+    #summary {
+      text-align: center;
+      background: #1270c2;
+      font-size: 1.2em;
+      padding: 8px;
+      color: white;
+      position: sticky;
+      top: 52px;
+      z-index: 100;
+    }
 
-.table-container {
-  height: calc(100vh - 180px);
-  overflow-y: hidden; /* REQUIRED for TV smoothness */
-  padding: 10px;
-}
+    .table-container {
+      height: calc(100vh - 180px);
+      overflow: hidden; /* REQUIRED for TV stability */
+      padding: 10px;
+    }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
 
-th, td {
-  padding: 10px;
-  border: 1px solid #ddd;
-  font-size: 14px;
-}
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      font-size: 14px;
+    }
 
-thead th {
-  background: #f1f1f1;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
+    thead th {
+      background-color: #f1f1f1;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
 
-.green-row { background: #006400 !important; color: white; }
-.yellow-row { background: #FFD700 !important; color: black; }
-.red-row { background: #8B0000 !important; color: white; }
+    .green-row { background: #006400 !important; color: white; }
+    .yellow-row { background: #FFD700 !important; color: black; }
+    .red-row { background: #8B0000 !important; color: white; }
 
-.timer { font-size: 12px; display: block; }
+    .timer { display: block; font-size: 12px; }
 
-.footer {
-  text-align: center;
-  font-size: 0.6em;
-  color: gray;
-}
-</style>
+    .footer {
+      text-align: center;
+      font-size: 0.6em;
+      color: gray;
+    }
+  </style>
 </head>
 
 <body>
@@ -83,31 +84,77 @@ thead th {
 <div id="summary">Total Invoices In Confirmation: 0</div>
 
 <div class="table-container" id="scrollContainer">
-<table id="invoiceTable">
-<thead>
-<tr>
-<th>Invoice</th>
-<th>Confirmation Time</th>
-<th>Confirmer</th>
-<th>Customer</th>
-<th>Credit Terms</th>
-<th>Route</th>
-<th>Order Date</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+  <table id="invoiceTable">
+    <thead>
+      <tr>
+        <th>Invoice</th>
+        <th>CONFIRMATION TIME IN</th>
+        <th>CONFIRMER</th>
+        <th>Customer Name</th>
+        <th>Credit Terms</th>
+        <th>Route</th>
+        <th>Order Date</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 </div>
 
 <div class="footer">
-Last updated: <span id="lastUpdated"></span><br>
-Designed and Managed by MIS.DPT
+  Last updated: <span id="lastUpdated"></span><br />
+  Designed and Managed by MIS.DPT
 </div>
 
 <script src="config.js"></script>
 
 <script>
-/* ------------------ FETCH + RENDER ------------------ */
+/* ===================== TTS (UNCHANGED) ===================== */
+
+function formatInvoiceForSpeech(inv) {
+  const prefix = inv.slice(0, 3).split("").join(" ");
+  const last4 = inv.slice(-4).split("").map(n =>
+    ["zero","one","two","three","four","five","six","seven","eight","nine"][n]
+  ).join(" ");
+  return `${prefix} ${last4}`;
+}
+
+let femaleVoice = null;
+function loadVoices() {
+  const v = speechSynthesis.getVoices();
+  femaleVoice = v.find(x => x.name.toLowerCase().includes("female")) || v[0];
+}
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
+let ttsActivated = false;
+function activateTTS() {
+  if (!ttsActivated) {
+    speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+    ttsActivated = true;
+  }
+}
+["click","keydown","touchstart"].forEach(e =>
+  window.addEventListener(e, activateTTS)
+);
+
+let speakQueue = [];
+let speaking = false;
+
+function queueAlert(msg) {
+  speakQueue.push(msg);
+  speakNext();
+}
+
+function speakNext() {
+  if (speaking || !speakQueue.length || !ttsActivated) return;
+  const u = new SpeechSynthesisUtterance(speakQueue.shift());
+  if (femaleVoice) u.voice = femaleVoice;
+  speaking = true;
+  u.onend = () => { speaking = false; speakNext(); };
+  speechSynthesis.speak(u);
+}
+
+/* ===================== API ===================== */
 
 const API_URL =
   window.API_CONFIG.API_URL +
@@ -121,28 +168,28 @@ async function fetchInvoices() {
   });
   const json = await res.json();
   if (!json.data) return;
-  renderTable(json.data);
+  render(json.data);
+  scanDelayedInvoices(json.data);
   document.getElementById("lastUpdated").textContent =
     new Date().toLocaleTimeString();
 }
 
-function renderTable(data) {
-  const tbody = document.querySelector("#invoiceTable tbody");
-  tbody.innerHTML = "";
+function render(data) {
+  const tb = document.querySelector("#invoiceTable tbody");
+  tb.innerHTML = "";
   document.getElementById("summary").textContent =
     `Total Invoices In Confirmation: ${data.length}`;
 
   data.forEach(item => {
     const t = new Date(item.orderConfirmationCheckinAt);
-    const diffMin = (Date.now() - t) / 60000;
-
+    const mins = (Date.now() - t) / 60000;
     const tr = document.createElement("tr");
-    if (diffMin <= 10) tr.className = "green-row";
-    else if (diffMin <= 20) tr.className = "yellow-row";
-    else tr.className = "red-row";
+
+    tr.className =
+      mins <= 10 ? "green-row" :
+      mins <= 20 ? "yellow-row" : "red-row";
 
     const id = `timer-${item.id}`;
-
     tr.innerHTML = `
       <td>${item.invoiceNumber}</td>
       <td>${t.toLocaleTimeString()}<span id="${id}" class="timer"></span></td>
@@ -152,7 +199,7 @@ function renderTable(data) {
       <td>${item.routeName}</td>
       <td>${t.toLocaleDateString()}</td>
     `;
-    tbody.appendChild(tr);
+    tb.appendChild(tr);
     startTimer(id, t);
   });
 }
@@ -162,20 +209,32 @@ function startTimer(id, t) {
     const m = Math.floor((Date.now() - t) / 60000);
     const h = Math.floor(m / 60);
     const el = document.getElementById(id);
-    if (el) el.textContent = `In confirmation: ${h}h ${m % 60}m`;
+    if (el) el.textContent = `In confirmation for: ${h}h ${m % 60}m`;
   }
   tick();
   setInterval(tick, 60000);
 }
 
-/* ------------------ ANDROID TV AUTO SCROLL ------------------ */
+function scanDelayedInvoices(data) {
+  data.forEach(item => {
+    const diff = (Date.now() - new Date(item.orderConfirmationCheckinAt)) / 60000;
+    if (diff > 20) {
+      const delay = Math.floor(diff - 20);
+      queueAlert(
+        `${item.itemsConfirmedByName || "staff"}, invoice ${formatInvoiceForSpeech(item.invoiceNumber)} delayed for ${delay} minutes`
+      );
+    }
+  });
+}
+
+/* ===================== FIXED AUTO SCROLL (ONLY CHANGE) ===================== */
 
 const container = document.getElementById("scrollContainer");
 
 let dir = 1;
 let pos = 0;
 let pauseUntil = 0;
-const speed = 0.35; // pixels per frame (TV safe)
+const speed = 0.35; // TV-safe
 
 function autoScroll(ts) {
   if (ts < pauseUntil) {
@@ -190,13 +249,13 @@ function autoScroll(ts) {
   if (pos >= max && dir === 1) {
     pos = max;
     dir = -1;
-    pauseUntil = ts + 2000; // pause bottom
+    pauseUntil = ts + 2000;
   }
 
   if (pos <= 0 && dir === -1) {
     pos = 0;
     dir = 1;
-    pauseUntil = ts + 2000; // pause top
+    pauseUntil = ts + 2000;
   }
 
   requestAnimationFrame(autoScroll);
@@ -204,9 +263,35 @@ function autoScroll(ts) {
 
 requestAnimationFrame(autoScroll);
 
-/* ------------------ REFRESH ------------------ */
+/* ===================== INIT ===================== */
+
 fetchInvoices();
 setInterval(fetchInvoices, 30000);
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.createElement("button");
+  btn.textContent = "▶️ Start Voice Alerts";
+  btn.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    padding: 6px 12px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    z-index: 1000;
+  `;
+  document.body.appendChild(btn);
+  btn.onclick = () => {
+    activateTTS();
+    btn.textContent = "🎧 Voice Active";
+    btn.disabled = true;
+  };
+});
 </script>
 
 </body>
