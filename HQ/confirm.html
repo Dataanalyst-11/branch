@@ -135,46 +135,127 @@
   <script src="config.js"></script>
 
   <script>
-    /* Build today's date */
-    let today = new Date();
-    let yyyy = today.getFullYear();
-    let mm = String(today.getMonth() + 1).padStart(2, '0');
-    let dd = String(today.getDate()).padStart(2, '0');
-    let formatted = `${yyyy}-${mm}-${dd}`;
+    /*************** Short Invoice Speech Formatter ***************/
+function formatInvoiceForSpeech(inv) {
+  const prefix = inv.slice(0, 3).split("").join(" ");
+  const last4 = inv.slice(-4).split("").map(n =>
+    ["zero","one","two","three","four","five","six","seven","eight","nine"][n]
+  ).join(" ");
+  return `${prefix} ${last4}`;
+}
 
-    /* Test period */
-    let testDate = '2025-11-04';
-    let testEndDate = '2025-11-04';
-    // ================================
-    // Use central config instead of hardcoding
-    //683976e3994a072a600cbd7a-Headoffice
-    // ================================
-    const API_URL = window.API_CONFIG.API_URL+`list?status=ITEM_CONFIRMATION&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
-    const API_TOKEN = window.API_CONFIG.API_TOKEN;
+/*************** FEMALE VOICE SETUP ***************/
+let femaleVoice = null;
 
-    // ================================
-    // Fetch API Data
-    // ================================
-    async function fetchInvoices() {
-      try {
-        const response = await fetch(API_URL, {
-          headers: {
-            "Authorization": API_TOKEN,
-            "Content-Type": "application/json"
-          }
-        });
+function loadVoices() {
+  const voices = speechSynthesis.getVoices();
 
-        const result = await response.json();
+  femaleVoice =
+    voices.find(v => v.name.includes("Google UK English Female")) ||
+    voices.find(v => v.name.includes("Google US English Female")) ||
+    voices.find(v => v.name.toLowerCase().includes("female")) ||
+    voices.find(v => v.name.toLowerCase().includes("woman")) ||
+    voices.find(v => v.name.includes("Samantha")) ||  // Safari female
+    voices[0];
 
-        if (result.status && result.data) {
-          displayInvoices(result.data);
-          document.getElementById("lastUpdated").textContent =
-            new Date().toLocaleTimeString();
-        }
-      } catch (err) {
-        console.error("Fetch failed:", err);
-      }
+  console.log("Female voice selected:", femaleVoice?.name);
+}
+
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
+/*************** Browser-Required TTS Activation ***************/
+let ttsActivated = false;
+
+function activateTTS() {
+  if (!ttsActivated) {
+    const unlock = new SpeechSynthesisUtterance("");
+    speechSynthesis.speak(unlock);
+
+    ttsActivated = true;
+    console.log("TTS Activated");
+
+    if (window._latestData) scanDelayedInvoices(window._latestData);
+  }
+}
+
+window.addEventListener("click", activateTTS);
+window.addEventListener("keydown", activateTTS);
+window.addEventListener("touchstart", activateTTS);
+
+/*************** Build date ***************/
+const today = new Date();
+const yyyy = today.getFullYear();
+const mm = String(today.getMonth() + 1).padStart(2, "0");
+const dd = String(today.getDate()).padStart(2, "0");
+const formatted = `${yyyy}-${mm}-${dd}`;
+
+/*************** Config ***************/
+const API_URL =
+  window.API_CONFIG.API_URL +
+  `list?status=ITEM_CONFIRMATION&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
+const API_TOKEN = window.API_CONFIG.API_TOKEN;
+
+/*************** GLOBAL STATE ***************/
+let isMuted = false;
+
+/*************** TTS Queue ***************/
+let speakQueue = [];
+let isSpeaking = false;
+
+function speakNextInQueue() {
+  if (isSpeaking || speakQueue.length === 0 || isMuted || !ttsActivated) return;
+
+  const message = speakQueue.shift();
+  const utter = new SpeechSynthesisUtterance(message);
+
+  // ➤ APPLY FEMALE VOICE HERE
+  if (femaleVoice) utter.voice = femaleVoice;
+
+  utter.pitch = 1;
+  utter.rate = 1;
+
+  isSpeaking = true;
+  utter.onend = () => {
+    isSpeaking = false;
+    speakNextInQueue();
+  };
+
+  speechSynthesis.speak(utter);
+}
+
+function queueAlert(message) {
+  speakQueue.push(message);
+  speakNextInQueue();
+}
+
+/*************** Fetch API Data ***************/
+async function fetchInvoices() {
+  try {
+    const response = await fetch(API_URL, {
+      headers: {
+        Authorization: API_TOKEN,
+        "Content-Type": "application/json",
+      },
+    });
+    const result = await response.json();
+
+    if (result.status && result.data) {
+      window._latestData = result.data;
+      displayInvoices(result.data);
+
+      if (ttsActivated) scanDelayedInvoices(result.data);
+
+      document.getElementById("lastUpdated").textContent =
+        new Date().toLocaleTimeString();
     }
+  } catch (err) {
+    console.error("Fetch failed:", err);
+    document.getElementById("summary").textContent =
+      "⚠️ Connection Error. Retrying...";
+  }
+}
+
 
     // ================================
     // Render Table Rows
@@ -221,6 +302,24 @@
 
       startAutoScroll();
     }
+/*************** TTS Scanner ***************/
+function scanDelayedInvoices(data) {
+  data.forEach(item => {
+    const timeObj = new Date(item.orderConfirmationCheckinAt);
+    const diffMinutes = (Date.now() - timeObj) / 60000;
+
+    if (diffMinutes > 20) {
+      const delay = Math.floor(diffMinutes - 20);
+      if (delay < 1) return;
+
+      const spokenInvoice = formatInvoiceForSpeech(item.invoiceNumber);
+
+      const msg = `${item.itemsConfirmedByName || "staff"}, invoice ${spokenInvoice} has delayed for ${delay} minute${delay !== 1 ? "s" : ""}, kindly be fast.`;
+
+      queueAlert(msg);
+    }
+  });
+}
 
     // ================================
     // Timer Under Confirmation Time In
@@ -282,6 +381,37 @@
      setInterval(fetchInvoices, 30000);
      fetchInvoices();
   </script>
+
+   <script>
+/*************** Add TTS Start Button ***************/
+document.addEventListener("DOMContentLoaded", () => {
+  const ttsBtn = document.createElement("button");
+  ttsBtn.id = "ttsBtn";
+  ttsBtn.textContent = "▶️ Start Voice Alerts";
+  ttsBtn.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    padding: 6px 12px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    z-index: 1000;
+  `;
+  document.body.appendChild(ttsBtn);
+
+  ttsBtn.addEventListener("click", () => {
+    activateTTS();
+    ttsBtn.textContent = "🎧 Voice Active";
+    ttsBtn.style.background = "#2196F3";
+    ttsBtn.disabled = true;
+  });
+});
+</script>
 
 </body>
 </html>
