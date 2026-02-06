@@ -168,16 +168,20 @@ loadVoices();
 let ttsActivated = false;
 
 function activateTTS() {
-  if (!ttsActivated) {
-    const unlock = new SpeechSynthesisUtterance("");
-    speechSynthesis.speak(unlock);
+  if (ttsActivated) return;
 
-    ttsActivated = true;
-    console.log("TTS Activated");
+  // MUST be triggered directly by user gesture
+  const utter = new SpeechSynthesisUtterance("Voice alerts activated.");
+  if (femaleVoice) utter.voice = femaleVoice;
 
-    if (window._latestData) scanDelayedInvoices(window._latestData);
-  }
+  speechSynthesis.speak(utter);
+
+  ttsActivated = true;
+  console.log("TTS Activated");
+
+  if (window._latestData) scanDelayedInvoices(window._latestData);
 }
+
 
 window.addEventListener("click", activateTTS);
 window.addEventListener("keydown", activateTTS);
