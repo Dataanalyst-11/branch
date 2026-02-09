@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Confirmation Flip Dashboard</title>
+  <title>Confirmation Fade Dashboard</title>
   <style>
     html, body {
       margin: 0;
@@ -17,7 +16,6 @@
       width: 100%;
       height: 100%;
       position: relative;
-      perspective: 2000px;
     }
 
     .dashboard {
@@ -26,28 +24,28 @@
       position: absolute;
       top: 0;
       left: 0;
-      transform-style: preserve-3d;
-      backface-visibility: hidden;
-      transition: transform 1s ease;
+      opacity: 0;
+      transition: opacity 1s ease;
     }
 
+    /* Default visible dashboard */
     #dash1 {
-      transform: rotateY(0deg);
+      opacity: 1;
       z-index: 2;
     }
 
     #dash2 {
-      transform: rotateY(180deg);
       z-index: 1;
     }
 
-    .flipped #dash1 {
-      transform: rotateY(-180deg);
+    /* Fade state */
+    .fade #dash1 {
+      opacity: 0;
       z-index: 1;
     }
 
-    .flipped #dash2 {
-      transform: rotateY(0deg);
+    .fade #dash2 {
+      opacity: 1;
       z-index: 2;
     }
 
@@ -59,10 +57,10 @@
   </style>
 </head>
 <body>
-  // Pharma flips
+
+  <!-- Pharma fades -->
   <div class="container" id="container">
     <div class="dashboard" id="dash1">
-      
       <iframe src="Intransit.html"></iframe>
     </div>
     <div class="dashboard" id="dash2">
@@ -71,12 +69,14 @@
   </div>
 
   <script>
-    let flipped = false;
+    let faded = false;
+
     setInterval(() => {
       const container = document.getElementById('container');
-      flipped = !flipped;
-      container.classList.toggle('flipped', flipped);
-    }, 60000); // 5 minutes
+      faded = !faded;
+      container.classList.toggle('fade', faded);
+    }, 60000); // 1 minute
   </script>
+
 </body>
 </html>
