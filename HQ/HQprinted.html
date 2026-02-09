@@ -205,9 +205,9 @@
         const diffMinutes = diffMs / 60000;
 
         /* Apply row color based on elapsed time */
-        if (diffMinutes <= 5) {
+        if (diffMinutes <= 10) {
           row.classList.add("green-row");
-        } else if (diffMinutes <= 10) {
+        } else if (diffMinutes <= 15) {
           row.classList.add("yellow-row");
         } else {
           row.classList.add("red-row");
