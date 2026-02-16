@@ -143,74 +143,115 @@ const summaryEl = document.getElementById("summary");
 const lastUpdatedEl = document.getElementById("lastUpdated");
 const container = document.querySelector(".table-container");
 
-/* ================= TTS STATE ================= */
+/* ================= TTS ENGINE (HARDENED) ================= */
 
 let ttsActivated = false;
 let femaleVoice = null;
 let speakQueue = [];
 let isSpeaking = false;
-let activeRedInvoices = new Map();
+let lastSpeechTime = Date.now();
+let activeRedInvoices = new Map(); // id -> last spoken minute
 
-/* ================= LOAD VOICES ================= */
+/* -------- Load Voices Safely -------- */
 
 function loadVoices() {
   const voices = speechSynthesis.getVoices();
   femaleVoice =
     voices.find(v => v.name.includes("Female")) ||
+    voices.find(v => v.name.includes("Google")) ||
     voices[0];
 }
 speechSynthesis.onvoiceschanged = loadVoices;
 loadVoices();
 
-/* ================= TTS BUTTON ================= */
+/* -------- Activate TTS -------- */
 
 document.getElementById("ttsBtn").addEventListener("click", () => {
-  if (!ttsActivated) {
-    speechSynthesis.speak(new SpeechSynthesisUtterance(""));
-    ttsActivated = true;
-    document.getElementById("ttsBtn").textContent = "🎧 Voice Active";
-    document.getElementById("ttsBtn").style.background = "#2196F3";
-  }
+  if (ttsActivated) return;
+
+  speechSynthesis.cancel();
+  speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+
+  ttsActivated = true;
+  document.getElementById("ttsBtn").textContent = "🎧 Voice Active";
+  document.getElementById("ttsBtn").style.background = "#2196F3";
 });
 
-/* ================= SPEECH ================= */
+/* -------- Speech Queue -------- */
 
-function speakNext() {
+function queueSpeech(text) {
+  if (!ttsActivated) return;
+
+  // Prevent queue explosion
+  if (speakQueue.length > 10) return;
+
+  speakQueue.push(text);
+  processSpeechQueue();
+}
+
+function processSpeechQueue() {
   if (!ttsActivated || isSpeaking || speakQueue.length === 0) return;
 
-  const text = speakQueue.shift();
-  const utter = new SpeechSynthesisUtterance(text);
+  if (!femaleVoice) loadVoices();
+
+  const message = speakQueue.shift();
+  const utter = new SpeechSynthesisUtterance(message);
+
   if (femaleVoice) utter.voice = femaleVoice;
 
+  utter.rate = 1;
+  utter.pitch = 1;
+
   isSpeaking = true;
+  lastSpeechTime = Date.now();
+
   utter.onend = () => {
     isSpeaking = false;
-    speakNext();
+    lastSpeechTime = Date.now();
+    processSpeechQueue();
+  };
+
+  utter.onerror = () => {
+    isSpeaking = false;
+    processSpeechQueue();
   };
 
   speechSynthesis.speak(utter);
 }
 
-function queueSpeech(text) {
-  speakQueue.push(text);
-  speakNext();
-}
+/* -------- Watchdog (Self-Healing) -------- */
+
+setInterval(() => {
+
+  if (!ttsActivated) return;
+
+  // If engine stuck
+  if (isSpeaking && !speechSynthesis.speaking) {
+    isSpeaking = false;
+    processSpeechQueue();
+  }
+
+  // If speech engine froze for 30+ seconds
+  if (Date.now() - lastSpeechTime > 30000 && speakQueue.length > 0) {
+    speechSynthesis.cancel();
+    isSpeaking = false;
+    processSpeechQueue();
+  }
+
+}, 5000);
+
+/* ================= FORMAT INVOICE ================= */
 
 function formatInvoiceForSpeech(inv) {
-
   if (!inv || inv.length < 4) return inv;
 
-  // First 3 characters (letters spoken individually)
-  const firstThree = inv.slice(0, 3)
-    .split("")
-    .join(" ");
+  const firstThree = inv.slice(0,3).split("").join(" ");
 
-  // Last 4 characters (digits spoken as numbers)
   const lastFour = inv.slice(-4)
     .split("")
-    .map(char => {
-      const numbers = ["zero","one","two","three","four","five","six","seven","eight","nine"];
-      return numbers[char] ?? char;
+    .map(n => {
+      const nums = ["zero","one","two","three","four","five","six","seven","eight","nine"];
+      return nums[n] ?? n;
     })
     .join(" ");
 
@@ -225,6 +266,8 @@ async function fetchInvoices() {
       headers: { Authorization: API_TOKEN }
     });
 
+    if (!response.ok) throw new Error("API error");
+
     const json = await response.json();
     const data = Array.isArray(json) ? json : json.data || [];
 
@@ -232,19 +275,22 @@ async function fetchInvoices() {
     lastUpdatedEl.textContent = new Date().toLocaleTimeString();
 
   } catch (err) {
-    console.error(err);
+    console.error("Fetch error:", err);
   }
 }
 
 /* ================= RENDER ================= */
 
 function renderTable(data) {
+
   tbody.innerHTML = "";
   summaryEl.textContent = `Total Invoices In Store: ${data.length}`;
 
   const visibleIds = new Set();
 
   data.forEach(item => {
+
+    if (!item.storeCheckinAt) return;
 
     const checkin = new Date(item.storeCheckinAt);
     const diffMinutes = Math.floor((Date.now() - checkin.getTime()) / 60000);
@@ -267,10 +313,10 @@ function renderTable(data) {
 
     tbody.appendChild(row);
 
-    handleRedAlert(item, diffMinutes);
+    handleRedInvoice(item, diffMinutes);
   });
 
-  cleanupRemovedInvoices(visibleIds);
+  cleanupInactiveInvoices(visibleIds);
 }
 
 function addCell(row,text){
@@ -301,26 +347,24 @@ function updateRowColor(row,mins){
 
 /* ================= RED ALERT LOGIC ================= */
 
-function handleRedAlert(item, diffMinutes){
+function handleRedInvoice(item, diffMinutes) {
 
-  if(diffMinutes <= 20){
+  if (diffMinutes <= 20) {
     activeRedInvoices.delete(item.id);
     return;
   }
 
-  const lastSpokenMinute = activeRedInvoices.get(item.id);
+  const lastMinuteSpoken = activeRedInvoices.get(item.id);
 
-  if(lastSpokenMinute === undefined || diffMinutes > lastSpokenMinute){
+  if (lastMinuteSpoken === undefined || diffMinutes > lastMinuteSpoken) {
 
     const delay = diffMinutes - 20;
-
     const spokenInvoice = formatInvoiceForSpeech(item.invoiceNumber);
-
-    const staffName = item.storePickerName || "Staff";
+    const picker = item.storePickerName || "Staff";
 
     const message =
-      `${staffName}, invoice ${spokenInvoice} ` +
-      `has delayed for ${delay} minute${delay !== 1 ? "s" : ""}. ` +
+      `${picker}, invoice ${spokenInvoice} has delayed for ` +
+      `${delay} minute${delay !== 1 ? "s" : ""}. ` +
       `Kindly be fast.`;
 
     queueSpeech(message);
@@ -329,10 +373,9 @@ function handleRedAlert(item, diffMinutes){
   }
 }
 
-
-function cleanupRemovedInvoices(visibleIds){
-  for(const id of activeRedInvoices.keys()){
-    if(!visibleIds.has(id)){
+function cleanupInactiveInvoices(visibleIds){
+  for (const id of activeRedInvoices.keys()) {
+    if (!visibleIds.has(id)) {
       activeRedInvoices.delete(id);
     }
   }
@@ -344,8 +387,9 @@ function updateTimers(){
   const rows=tbody.querySelectorAll("tr");
   rows.forEach(row=>{
     const timestamp=Number(row.dataset.checkin);
-    const diff=Math.floor((Date.now()-timestamp)/60000);
+    if(!timestamp) return;
 
+    const diff=Math.floor((Date.now()-timestamp)/60000);
     const hrs=Math.floor(diff/60);
     const mins=diff%60;
 
@@ -394,6 +438,7 @@ setInterval(fetchInvoices,30000);
 setInterval(updateTimers,10000);
 
 </script>
+
 
 </body>
 </html>
