@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -115,27 +116,35 @@ thead th {
 
 <script src="config.js"></script>
 <script>
-/* ===========================
+
+/* =========================================================
    DATE
-=========================== */
+========================================================= */
 var today = new Date();
-var yyyy = today.getFullYear();
-var mm = ("0" + (today.getMonth() + 1)).slice(-2);
-var dd = ("0" + today.getDate()).slice(-2);
-var formatted = yyyy + "-" + mm + "-" + dd;
+var formatted = today.toISOString().split("T")[0];
 
-/* ===========================
-   ENVIRONMENT
-=========================== */
-var IS_KIOSK = /FullyKiosk|WebView|wv/i.test(navigator.userAgent);
+/* =========================================================
+   ENVIRONMENT DETECTION
+========================================================= */
+var USER_AGENT = navigator.userAgent || "";
+
+var IS_FULLY_KIOSK = /FullyKiosk/i.test(USER_AGENT);
+var IS_ANDROID_WEBVIEW = /wv|WebView/i.test(USER_AGENT);
+var IS_KIOSK = IS_FULLY_KIOSK || IS_ANDROID_WEBVIEW;
+
 var TTS_SUPPORTED =
+  !IS_KIOSK &&
+  typeof window !== "undefined" &&
   "speechSynthesis" in window &&
-  "SpeechSynthesisUtterance" in window &&
-  !IS_KIOSK;
+  "SpeechSynthesisUtterance" in window;
 
-/* ===========================
+console.log("Environment:", USER_AGENT);
+console.log("Kiosk Mode:", IS_KIOSK);
+console.log("TTS Supported:", TTS_SUPPORTED);
+
+/* =========================================================
    CONFIG
-=========================== */
+========================================================= */
 var API_URL =
   window.API_CONFIG.API_URL +
   "list?status=ITEM_CONFIRMATION" +
@@ -144,50 +153,35 @@ var API_URL =
 
 var API_TOKEN = window.API_CONFIG.API_TOKEN;
 
-/* ===========================
-   NETWORK
-=========================== */
-function universalFetch(url, token, onSuccess, onError) {
-  if (window.fetch && !IS_KIOSK) {
-    fetch(url, { headers: { "Authorization": token } })
-      .then(r=>r.json()).then(onSuccess).catch(onError);
-  } else {
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", url, true);
-    xhr.setRequestHeader("Authorization", token);
-    xhr.onload = function() { onSuccess(JSON.parse(xhr.responseText)); };
-    xhr.onerror = onError;
-    xhr.send();
-  }
-}
+var tbody = document.querySelector("#invoiceTable tbody");
+var summaryEl = document.getElementById("summary");
+var lastUpdatedEl = document.getElementById("lastUpdated");
+var ttsBtn = document.getElementById("ttsBtn");
 
-/* ===========================
-   INVOICE SPEECH FORMATTER
-=========================== */
-function formatInvoiceForSpeech(inv) {
-  if (!inv || inv.length < 7) return inv;
-  var prefix = inv.substr(0,3).split("").join(" ");
-  var last4 = inv.substr(inv.length-4).split("").join(" ");
-  return prefix + " " + last4;
-}
+/* =========================================================
+   TTS HARDENED ENGINE
+========================================================= */
 
-/* ===========================
-   TTS
-=========================== */
 var femaleVoice = null;
 var ttsActivated = false;
 var speakQueue = [];
 var isSpeaking = false;
+var lastSpeechTime = Date.now();
+var activeRedInvoices = {}; // invoiceId -> lastSpokenDelay
 
+/* ---------- Disable Button in Kiosk ---------- */
+if (!TTS_SUPPORTED) {
+  ttsBtn.style.display = "none";
+}
+
+/* ---------- Load Voice Safely ---------- */
 function loadVoicesSafe() {
   if (!TTS_SUPPORTED) return;
   var voices = speechSynthesis.getVoices();
-  for (var i=0;i<voices.length;i++) {
-    if (voices[i].name==="Google UK English Female") {
-      femaleVoice = voices[i]; break;
-    }
-  }
-  if (!femaleVoice && voices.length) femaleVoice = voices[0];
+  femaleVoice =
+    voices.find(v => v.name.includes("Female")) ||
+    voices.find(v => v.name.includes("Google")) ||
+    voices[0];
 }
 
 if (TTS_SUPPORTED) {
@@ -195,133 +189,248 @@ if (TTS_SUPPORTED) {
   loadVoicesSafe();
 }
 
-/* ===========================
-   TTS BUTTON
-=========================== */
-document.getElementById("ttsBtn").onclick = function(){
+/* ---------- Activate TTS ---------- */
+ttsBtn.onclick = function () {
   if (!TTS_SUPPORTED || ttsActivated) return;
-  var u = new SpeechSynthesisUtterance("Invoice alerts activated");
-  if (femaleVoice) u.voice = femaleVoice;
-  speechSynthesis.speak(u);
+
+  speechSynthesis.cancel();
+  speechSynthesis.speak(new SpeechSynthesisUtterance("Invoice alerts activated"));
+
   ttsActivated = true;
   this.innerText = "🔊 Alerts Active";
   this.disabled = true;
 };
 
-/* ===========================
-   TTS QUEUE
-=========================== */
-function queueAlert(msg) {
-  speakQueue.push(msg);
-  speakNext();
+/* ---------- Queue Protection ---------- */
+function queueAlert(message) {
+  if (!ttsActivated || !TTS_SUPPORTED) return;
+
+  if (speakQueue.length > 15) return; // prevent overflow
+
+  speakQueue.push(message);
+  processQueue();
 }
 
-function speakNext() {
-  if (isSpeaking || !speakQueue.length) return;
-  var u = new SpeechSynthesisUtterance(speakQueue.shift());
-  if (femaleVoice) u.voice = femaleVoice;
+/* ---------- Speech Processor ---------- */
+function processQueue() {
+  if (!ttsActivated || !TTS_SUPPORTED) return;
+  if (isSpeaking || speakQueue.length === 0) return;
+
+  if (!femaleVoice) loadVoicesSafe();
+
+  var utter = new SpeechSynthesisUtterance(speakQueue.shift());
+  if (femaleVoice) utter.voice = femaleVoice;
+
+  utter.rate = 1;
+  utter.pitch = 1;
+
   isSpeaking = true;
-  u.onend = function(){ isSpeaking=false; speakNext(); };
-  speechSynthesis.speak(u);
+  lastSpeechTime = Date.now();
+
+  utter.onend = function () {
+    isSpeaking = false;
+    lastSpeechTime = Date.now();
+    processQueue();
+  };
+
+  utter.onerror = function () {
+    isSpeaking = false;
+    processQueue();
+  };
+
+  speechSynthesis.speak(utter);
 }
 
-/* ===========================
-   TRACK LAST ANNOUNCED DELAY
-=========================== */
-var lastAnnouncedDelay = {}; // invoiceId -> minutes
+/* ---------- Self-Healing Watchdog ---------- */
+setInterval(function () {
 
-/* ===========================
-   SCAN RED INVOICES (INCREMENTAL)
-=========================== */
-function scanDelayedInvoices(data) {
-  if (!TTS_SUPPORTED || !ttsActivated) return;
+  if (!ttsActivated || !TTS_SUPPORTED) return;
 
-  for (var i=0;i<data.length;i++){
-    var item = data[i];
-    var timeObj = new Date(item.orderConfirmationCheckinAt);
-    var diffMin = (Date.now()-timeObj)/60000;
-
-    if(diffMin>20){
-      var delay = Math.floor(diffMin-20);
-      // Only announce if delay increased
-      if(!lastAnnouncedDelay[item.id] || delay > lastAnnouncedDelay[item.id]){
-        var spokenInvoice = formatInvoiceForSpeech(item.invoiceNumber);
-        var msg = (item.itemsConfirmedByName||"staff") +
-                  ", invoice " + spokenInvoice +
-                  " has delayed for " + delay +
-                  " minute" + (delay!==1?"s":"") +
-                  ", kindly be fast.";
-        queueAlert(msg);
-        lastAnnouncedDelay[item.id] = delay;
-      }
-    } else {
-      // reset delay if invoice is no longer red
-      if(lastAnnouncedDelay[item.id]) delete lastAnnouncedDelay[item.id];
-    }
+  // Engine stuck detection
+  if (isSpeaking && !speechSynthesis.speaking) {
+    isSpeaking = false;
+    processQueue();
   }
+
+  // Auto-reset if frozen >30s
+  if (Date.now() - lastSpeechTime > 30000 && speakQueue.length > 0) {
+    console.log("Speech engine reset triggered");
+    speechSynthesis.cancel();
+    isSpeaking = false;
+    processQueue();
+  }
+
+}, 5000);
+
+/* =========================================================
+   FORMAT INVOICE FOR SPEECH
+========================================================= */
+function formatInvoiceForSpeech(inv) {
+  if (!inv || inv.length < 4) return inv;
+
+  var firstThree = inv.substr(0,3).split("").join(" ");
+
+  var lastFour = inv.substr(inv.length-4)
+    .split("")
+    .map(function(n){
+      var nums=["zero","one","two","three","four","five","six","seven","eight","nine"];
+      return nums[n] || n;
+    })
+    .join(" ");
+
+  return firstThree + " " + lastFour;
 }
 
-/* ===========================
-   RENDERING
-=========================== */
-function displayInvoices(data){
-  var tbody = document.querySelector("#invoiceTable tbody");
-  tbody.innerHTML="";
-  document.getElementById("summary").innerText="Total Invoices In Confirmation: "+data.length;
+/* =========================================================
+   FETCH + RENDER
+========================================================= */
+function fetchAndRender() {
+  fetch(API_URL, { headers: { Authorization: API_TOKEN } })
+    .then(r => r.json())
+    .then(function(res){
+      if (!res || !res.data) return;
+      render(res.data);
+      lastUpdatedEl.innerText = new Date().toLocaleTimeString();
+    })
+    .catch(function(err){
+      console.log("Fetch error:", err);
+    });
+}
 
-  for (var i=0;i<data.length;i++){
-    var item=data[i];
-    var timeObj=new Date(item.orderConfirmationCheckinAt);
-    var diffMin=(Date.now()-timeObj)/60000;
-    var tr=document.createElement("tr");
-    tr.className=diffMin<=10?"green-row":diffMin<=20?"yellow-row":"red-row";
-    tr.innerHTML=
+function render(data) {
+
+  tbody.innerHTML = "";
+  summaryEl.innerText =
+    "Total Invoices In Confirmation: " + data.length;
+
+  var visibleIds = {};
+
+  data.forEach(function(item){
+
+    if (!item.orderConfirmationCheckinAt) return;
+
+    var checkin = new Date(item.orderConfirmationCheckinAt);
+    var diffMin = Math.floor((Date.now() - checkin.getTime()) / 60000);
+
+    visibleIds[item.id] = true;
+
+    var tr = document.createElement("tr");
+
+    if (diffMin <= 10) tr.className = "green-row";
+    else if (diffMin <= 20) tr.className = "yellow-row";
+    else tr.className = "red-row";
+
+    tr.innerHTML =
       "<td>"+item.invoiceNumber+"</td>"+
-      "<td>"+timeObj.toLocaleTimeString()+
-      "<span class='timer'>In confirmation: "+Math.floor(diffMin/60)+"h "+Math.floor(diffMin%60)+"m</span></td>"+
+      "<td>"+checkin.toLocaleTimeString()+
+      "<span class='timer'>In confirmation: "+
+      Math.floor(diffMin/60)+"h "+(diffMin%60)+"m</span></td>"+
       "<td>"+(item.itemsConfirmedByName||"-")+"</td>"+
       "<td>"+item.customerName+"</td>"+
       "<td>"+(item.creditTerm||"").replace(/_/g," ")+"</td>"+
       "<td>"+item.routeName+"</td>"+
-      "<td>"+timeObj.toLocaleDateString()+"</td>";
+      "<td>"+checkin.toLocaleDateString()+"</td>";
+
     tbody.appendChild(tr);
+
+    handleRedInvoice(item, diffMin);
+  });
+
+  cleanupInvisible(visibleIds);
+}
+
+/* =========================================================
+   RED ANNOUNCEMENT LOGIC
+========================================================= */
+function handleRedInvoice(item, diffMin) {
+
+  if (!ttsActivated || !TTS_SUPPORTED) return;
+
+  if (diffMin <= 20) {
+    delete activeRedInvoices[item.id];
+    return;
+  }
+
+  var delay = diffMin - 20;
+
+  if (!activeRedInvoices[item.id] ||
+      delay > activeRedInvoices[item.id]) {
+
+    var spokenInvoice = formatInvoiceForSpeech(item.invoiceNumber);
+    var confirmer = item.itemsConfirmedByName || "Staff";
+
+    var message =
+      confirmer +
+      ", invoice " + spokenInvoice +
+      " has delayed for " + delay +
+      " minute" + (delay!==1?"s":"") +
+      ". Kindly be Fast.";
+
+    queueAlert(message);
+
+    activeRedInvoices[item.id] = delay;
   }
 }
 
-/* ===========================
-   AUTO SCROLL
-=========================== */
-var dir=1;
-setInterval(function(){
-  var c=document.querySelector(".table-container");
-  c.scrollTop+=dir;
-  if(c.scrollTop+c.clientHeight>=c.scrollHeight) dir=-1;
-  if(c.scrollTop<=0) dir=1;
-},40);
-
-/* ===========================
-   FETCH & ANNOUNCE LOOP
-=========================== */
-function fetchAndAnnounce(){
-  universalFetch(API_URL, API_TOKEN, function(res){
-    if(res && res.data){
-      displayInvoices(res.data);
-      document.getElementById("lastUpdated").innerText=new Date().toLocaleTimeString();
-      scanDelayedInvoices(res.data);
+function cleanupInvisible(visibleIds){
+  for (var id in activeRedInvoices){
+    if (!visibleIds[id]){
+      delete activeRedInvoices[id];
     }
-  });
+  }
 }
 
-// Initial fetch
-fetchAndAnnounce();
+/* =========================================================
+   AUTO SCROLL (TV SAFE)
+========================================================= */
+var direction = 1;
+var paused = false;
 
-// Repeat every minute
-setInterval(fetchAndAnnounce, 60000);
+function pause(ms){
+  paused = true;
+  setTimeout(function(){ paused=false; }, ms);
+}
 
-/* ===========================
-   SAFETY NET
-=========================== */
-window.onerror=function(msg){ console.log("JS Error:",msg); };
+setInterval(function(){
+
+  var container = document.querySelector(".table-container");
+  if (!container) return;
+
+  if (paused) return;
+
+  var max = container.scrollHeight - container.clientHeight;
+  var next = container.scrollTop + direction;
+
+  if (next >= max){
+    direction = -1;
+    pause(4000);
+  }
+  else if (next <= 0){
+    direction = 1;
+    pause(4000);
+  }
+  else{
+    container.scrollTop = next;
+  }
+
+}, 20);
+
+/* =========================================================
+   START
+========================================================= */
+fetchAndRender();
+setInterval(fetchAndRender, 60000);
+
+/* =========================================================
+   AUTO FULL RESET (Every 4 Hours)
+   Prevents long-running browser TTS freeze
+========================================================= */
+
+setInterval(function(){
+  location.reload();
+}, 1000 * 60 * 60 * 4); // refresh every 4 hours
+
+
 </script>
 
 </body>
