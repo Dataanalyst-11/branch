@@ -197,6 +197,7 @@ function renderRiders(riders) {
 
     card.innerHTML = `
       <div class="rider-name">${rider.driverName}</div>
+      <div class="stat"><strong>Trips Assigned:</strong> ${rider.numberOfTrips}</div>
       <div class="stat"><strong>Orders Assigned:</strong> ${rider.ordersAssigned}</div>
       <div class="stat"><strong>Delivered:</strong> ${rider.ordersDelivered}</div>
       <div class="stat"><strong>Cleared:</strong> ${rider.ordersCleared}</div>
