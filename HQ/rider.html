@@ -78,7 +78,7 @@
 
     .good {
       border-left-color: #008000 !important;
-      background: #e8f9e8;
+      background: #92fa92;
     }
 
     .bad {
@@ -121,6 +121,14 @@
       text-align: center;
       opacity: 0.7;
     }
+
+    .trips-assigned {
+      background-color: red;
+     color: white; /* optional for readability */
+     padding: 5px;
+     border-radius: 5px;
+    }
+    
   </style>
 </head>
 
@@ -196,13 +204,12 @@ function renderRiders(riders) {
     card.className = "card " + (rider.ordersDelivered > rider.ordersCleared ? "bad" : "good");
 
     card.innerHTML = `
-      <div class="rider-name">${rider.driverName}</div>
-      <div class="stat"><strong>Trips Assigned:</strong> ${rider.numberOfTrips}</div>
-      <div class="stat"><strong>Orders Assigned:</strong> ${rider.ordersAssigned}</div>
-      <div class="stat"><strong>Delivered:</strong> ${rider.ordersDelivered}</div>
-      <div class="stat"><strong>Cleared:</strong> ${rider.ordersCleared}</div>
-      <div class="stat"><strong>Failed:</strong> ${rider.ordersFailed}</div>
-      <div class="stat"><strong>Cancelled:</strong> ${rider.ordersCancelled}</div>
+     <div class="rider-name">${rider.driverName}</div>
+     <div class="stat trips-assigned"><strong>Trips Assigned:</strong> ${rider.numberOfTrips}</div>
+     <div class="stat"><strong>Orders Assigned:</strong> ${rider.ordersAssigned}</div>
+     <div class="stat"><strong>Delivered:</strong> ${rider.ordersDelivered}</div>
+     <div class="stat"><strong>Cleared:</strong> ${rider.ordersCleared}</div>
+     
     `;
     container.appendChild(card);
   });
