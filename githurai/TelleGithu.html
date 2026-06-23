@@ -1,1 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Performance Less Than 50%</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+    background: #0f172a;
+    color: #e5e7eb;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 16px;
+    text-align: center;
+    font-size: 28px;
+    background: #ba9305;
+    color: #020617;
+  }
+
+  .container {
+    flex: 1;
+    padding: 0 20px;
+    overflow: hidden;
+  }
+
+  .table-container {
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .table-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 24px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: #1e293b;
+  color: #93c5fd;
+  text-transform: uppercase;
+  font-size: 15px;
+  z-index: 2;
+}
+
+th,
+td {
+  padding: 14px;
+  border-bottom: 1px solid #334155;
+  text-align: left;
+  vertical-align: middle;
+}
+
+/* Column widths */
+th:nth-child(1),
+td:nth-child(1) {
+  width: 70px;
+  text-align: center;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  width: 35%;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  width: 25%;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
+  width: 20%;
+  text-align: center;
+}
+
+th:nth-child(5),
+td:nth-child(5) {
+  width: 20%;
+  text-align: center;
+}
+
+  tbody tr:nth-child(even) {
+    background: #020617;
+  }
+
+  tbody tr:hover {
+    background: #1e293b;
+  }
+
+  .high { color: #2563eb; }
+  .medium { color: #facc15; }
+  .low { color: #ef4444; }
+
+  .rank {
+    color: #38bdf8;
+    font-weight: bold;
+    width: 60px;
+  }
+
+  footer {
+    text-align: center;
+    padding: 10px;
+    font-size: 14px;
+    background: #f8fafc;
+    color: #020617;
+  }
+</style>
+</head>
+
+<body>
+
+<header>
+ Live Telesales Performance 
+</header>
+
+<div class="container">
+  <div class="table-container" id="scrollContainer">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Telesale Name</th>
+          <th>Branch</th>
+          <th>Sales (%)</th>
+          <th>Customer Orders</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="5">Loading data…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<footer>
+  Last updated: <span id="lastUpdated"></span><br>
+  Designed and Managed by MIS.DPT
+</footer>
+
+<script src="config.js"></script>
+
+<script>
+const BASE_API =
+  window.API_CONFIG.API_URL + "sales-person-performance";
+
+const API_TOKEN = window.API_CONFIG.API_TOKEN;
+
+const REFRESH_INTERVAL = 600000;
+
+/* ================= AUTO SCROLL ================= */
+let scrollInterval;
+
+function startAutoScroll() {
+
+  const c = document.getElementById("scrollContainer");
+
+  clearInterval(scrollInterval);
+
+  let direction = 1;
+  let scrollTop = 0;
+  let isPaused = false;
+
+  if (c.scrollHeight <= c.clientHeight) return;
+
+  scrollInterval = setInterval(() => {
+
+    if (isPaused) return;
+
+    scrollTop += direction * 2;
+
+    c.scrollTop = scrollTop;
+
+    const reachedBottom =
+      scrollTop >= c.scrollHeight - c.clientHeight;
+
+    const reachedTop =
+      scrollTop <= 0;
+
+    // Pause at bottom
+    if (reachedBottom && direction === 1) {
+
+      scrollTop = c.scrollHeight - c.clientHeight;
+
+      isPaused = true;
+
+      setTimeout(() => {
+        direction = -1;
+        isPaused = false;
+      }, 6000);
+    }
+
+    // Pause at top
+    if (reachedTop && direction === -1) {
+
+      scrollTop = 0;
+
+      isPaused = true;
+
+      setTimeout(() => {
+        direction = 1;
+        isPaused = false;
+      }, 6000);
+    }
+
+  }, 30);
+}
+/* ================= FETCH ================= */
+async function fetchPage(pageNum) {
+  const response = await fetch(`${BASE_API}?pageNum=${pageNum}`, {
+    headers: {
+      "Authorization": API_TOKEN,
+      "Content-Type": "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error("HTTP " + response.status);
+  }
+
+  return await response.json();
+}
+
+/* ================= LOAD ALL DATA ================= */
+async function loadAllPages() {
+  try {
+
+    let allData = [];
+
+    // First page
+    const firstResponse = await fetchPage(0);
+
+    const pageCount = firstResponse.pageCount || 1;
+
+    // Add first page data
+    allData.push(...(firstResponse.data || []));
+
+    // Fetch remaining pages
+    const promises = [];
+
+    for (let i = 1; i < pageCount; i++) {
+      promises.push(fetchPage(i));
+    }
+
+    const responses = await Promise.all(promises);
+
+    responses.forEach(res => {
+      allData.push(...(res.data || []));
+    });
+
+    /* ================= PROCESS ================= */
+    const processed = allData
+      .map(d => {
+
+        let score = d.dailySalesScore;
+
+        if (typeof score === "string") {
+          score = score.replace("%", "");
+        }
+
+        score = Number(score);
+
+        return {
+          ...d,
+          score
+        };
+      })
+
+      // Filter valid rows
+      .filter(d =>
+        !isNaN(d.score) &&
+        d.score > 0 &&
+        (
+          d.branchName === "Githurai"
+        )
+      )
+
+      // Highest → Lowest
+      .sort((a, b) => b.score - a.score);
+
+    renderTable(processed);
+
+    document.getElementById("lastUpdated").textContent =
+      new Date().toLocaleTimeString();
+
+  } catch (err) {
+
+    console.error(err);
+
+    document.getElementById("tableBody").innerHTML =
+      `<tr><td colspan="5">Failed to load data</td></tr>`;
+  }
+}
+
+/* ================= RENDER ================= */
+function renderTable(data) {
+
+  const tbody = document.getElementById("tableBody");
+
+  if (!data.length) {
+    tbody.innerHTML =
+      `<tr><td colspan="5">No sales Data Available</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = "";
+
+  data.forEach((item, index) => {
+
+    const sales = item.score;
+
+    const orders = Number(item.totalDaysCustomers || 0);
+
+    const cls =
+      sales >= 80 ? "high" :
+      sales >= 50 ? "medium" :
+      "low";
+
+    tbody.innerHTML += `
+      <tr>
+        <td class="rank">${index + 1}</td>
+        <td>${item.salesPersonName}</td>
+        <td>${item.branchName}</td>
+        <td class="${cls}">
+          ${sales.toFixed(1)}%
+        </td>
+        <td>${orders}</td>
+      </tr>
+    `;
+  });
+
+  document.getElementById("scrollContainer").scrollTop = 0;
+
+  startAutoScroll();
+}
+
+/* ================= INIT ================= */
+loadAllPages();
+
+setInterval(loadAllPages, REFRESH_INTERVAL);
+</script>
+
+</body>
+</html>
