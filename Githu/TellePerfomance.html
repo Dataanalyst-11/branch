@@ -44,66 +44,44 @@
   }
 
   table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-size: 24px;
-}
-
-thead th {
-  position: sticky;
-  top: 0;
-  background: #1e293b;
-  color: #93c5fd;
-  text-transform: uppercase;
-  font-size: 15px;
-  z-index: 2;
-}
-
-th,
-td {
-  padding: 14px;
-  border-bottom: 1px solid #334155;
-  text-align: left;
-  vertical-align: middle;
-}
-
-/* Column widths */
-th:nth-child(1),
-td:nth-child(1) {
-  width: 70px;
-  text-align: center;
-}
-
-th:nth-child(2),
-td:nth-child(2) {
-  width: 35%;
-}
-
-th:nth-child(3),
-td:nth-child(3) {
-  width: 25%;
-}
-
-th:nth-child(4),
-td:nth-child(4) {
-  width: 20%;
-  text-align: center;
-}
-
-th:nth-child(5),
-td:nth-child(5) {
-  width: 20%;
-  text-align: center;
-}
-
-  tbody tr:nth-child(even) {
-    background: #020617;
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 24px;
   }
 
-  tbody tr:hover {
+  thead th {
+    position: sticky;
+    top: 0;
     background: #1e293b;
+    color: #93c5fd;
+    text-transform: uppercase;
+    font-size: 15px;
+    z-index: 2;
   }
+
+  th,
+  td {
+    padding: 14px;
+    border-bottom: 1px solid #334155;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  /* Column widths */
+  th:nth-child(1),
+  td:nth-child(1) { width: 70px; text-align: center; }
+  th:nth-child(2),
+  td:nth-child(2) { width: 35%; }
+  th:nth-child(3),
+  td:nth-child(3) { width: 25%; }
+  th:nth-child(4),
+  td:nth-child(4) { width: 20%; text-align: center; }
+  th:nth-child(5),
+  td:nth-child(5) { width: 20%; text-align: center; }
+
+  tbody tr:nth-child(even) { background: #020617; }
+  tbody tr:hover { background: #1e293b; }
 
   .high { color: #2563eb; }
   .medium { color: #facc15; }
@@ -158,20 +136,34 @@ td:nth-child(5) {
 <script src="config.js"></script>
 
 <script>
-const BASE_API =
-  window.API_CONFIG.API_URL + "sales-person-performance";
-
+const BASE_API = window.API_CONFIG.API_URL + "sales-person-performance";
 const API_TOKEN = window.API_CONFIG.API_TOKEN;
+const REFRESH_INTERVAL = 600000; // 10 minutes
 
-const REFRESH_INTERVAL = 600000;
+/* ================= DATE HELPERS ================= */
+// Format date to YYYY-MM-DD for strict today filtering
+function getTodayStr() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Extract and validate the date from a record
+function isRecordToday(record) {
+  const rawDate = record.reportingDate || record.reportDate || record.salesDate || record.date || record.createdAt || "";
+  if (!rawDate) return false;
+  
+  const dateStr = String(rawDate).match(/^(\d{4}-\d{2}-\d{2})/);
+  return dateStr && dateStr[1] === getTodayStr();
+}
 
 /* ================= AUTO SCROLL ================= */
 let scrollInterval;
 
 function startAutoScroll() {
-
   const c = document.getElementById("scrollContainer");
-
   clearInterval(scrollInterval);
 
   let direction = 1;
@@ -181,26 +173,18 @@ function startAutoScroll() {
   if (c.scrollHeight <= c.clientHeight) return;
 
   scrollInterval = setInterval(() => {
-
     if (isPaused) return;
 
     scrollTop += direction * 2;
-
     c.scrollTop = scrollTop;
 
-    const reachedBottom =
-      scrollTop >= c.scrollHeight - c.clientHeight;
-
-    const reachedTop =
-      scrollTop <= 0;
+    const reachedBottom = scrollTop >= c.scrollHeight - c.clientHeight;
+    const reachedTop = scrollTop <= 0;
 
     // Pause at bottom
     if (reachedBottom && direction === 1) {
-
       scrollTop = c.scrollHeight - c.clientHeight;
-
       isPaused = true;
-
       setTimeout(() => {
         direction = -1;
         isPaused = false;
@@ -209,89 +193,63 @@ function startAutoScroll() {
 
     // Pause at top
     if (reachedTop && direction === -1) {
-
       scrollTop = 0;
-
       isPaused = true;
-
       setTimeout(() => {
         direction = 1;
         isPaused = false;
       }, 6000);
     }
-
   }, 30);
 }
-/* ================= FETCH ================= */
-async function fetchPage(pageNum) {
-  const response = await fetch(`${BASE_API}?pageNum=${pageNum}`, {
-    headers: {
-      "Authorization": API_TOKEN,
-      "Content-Type": "application/json"
-    }
-  });
 
-  if (!response.ok) {
-    throw new Error("HTTP " + response.status);
-  }
-
-  return await response.json();
-}
-
-/* ================= LOAD ALL DATA ================= */
-async function loadAllPages() {
+/* ================= FETCH (SINGLE REQUEST) ================= */
+async function loadTodayData() {
   try {
+    const today = getTodayStr();
+    
+    // We make ONE single request with a large pageSize and strict date parameters.
+    // This entirely eliminates the need for pagination loops.
+    const url = `${BASE_API}?pageSize=10000&startDate=${today}&endDate=${today}`;
 
-    let allData = [];
+    const response = await fetch(url, {
+      headers: {
+        "Authorization": API_TOKEN,
+        "Content-Type": "application/json"
+      }
+    });
 
-    // First page
-    const firstResponse = await fetchPage(0);
-
-    const pageCount = firstResponse.pageCount || 1;
-
-    // Add first page data
-    allData.push(...(firstResponse.data || []));
-
-    // Fetch remaining pages
-    const promises = [];
-
-    for (let i = 1; i < pageCount; i++) {
-      promises.push(fetchPage(i));
+    if (!response.ok) {
+      throw new Error("HTTP " + response.status);
     }
 
-    const responses = await Promise.all(promises);
-
-    responses.forEach(res => {
-      allData.push(...(res.data || []));
-    });
+    const json = await response.json();
+    
+    // Normalize data array (handle both direct array and {data: []} responses)
+    const allData = Array.isArray(json) ? json : (json.data || []);
 
     /* ================= PROCESS ================= */
     const processed = allData
       .map(d => {
-
         let score = d.dailySalesScore;
-
         if (typeof score === "string") {
           score = score.replace("%", "");
         }
-
         score = Number(score);
 
         return {
           ...d,
-          score
+          score,
+          isToday: isRecordToday(d) // Add strict validation flag
         };
       })
-
-      // Filter valid rows
+      // Filter valid rows: STRICTLY today, Githurai branch, and score > 0
       .filter(d =>
         !isNaN(d.score) &&
         d.score > 0 &&
-        (
-          d.branchName === "Githurai"
-        )
+        d.isToday === true &&
+        d.branchName === "Githurai"
       )
-
       // Highest → Lowest
       .sort((a, b) => b.score - a.score);
 
@@ -301,9 +259,7 @@ async function loadAllPages() {
       new Date().toLocaleTimeString();
 
   } catch (err) {
-
     console.error(err);
-
     document.getElementById("tableBody").innerHTML =
       `<tr><td colspan="5">Failed to load data</td></tr>`;
   }
@@ -311,21 +267,17 @@ async function loadAllPages() {
 
 /* ================= RENDER ================= */
 function renderTable(data) {
-
   const tbody = document.getElementById("tableBody");
 
   if (!data.length) {
-    tbody.innerHTML =
-      `<tr><td colspan="5">No sales Data Available</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No sales Data Available</td></tr>`;
     return;
   }
 
   tbody.innerHTML = "";
 
   data.forEach((item, index) => {
-
     const sales = item.score;
-
     const orders = Number(item.totalDaysCustomers || 0);
 
     const cls =
@@ -347,14 +299,15 @@ function renderTable(data) {
   });
 
   document.getElementById("scrollContainer").scrollTop = 0;
-
   startAutoScroll();
 }
 
 /* ================= INIT ================= */
-loadAllPages();
+// Load data once on start
+loadTodayData();
 
-setInterval(loadAllPages, REFRESH_INTERVAL);
+// Refresh every 10 minutes
+setInterval(loadTodayData, REFRESH_INTERVAL);
 </script>
 
 </body>
