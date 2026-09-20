@@ -138,7 +138,13 @@
     <div>Designed and Managed by MIS.DPT</div>
   </div>
 
-  <script src="config.js"></script>
+  <script>
+  // Not a credential — proxy only accepts requests from this site's origin.
+  // The real API token lives ONLY in the Cloudflare worker's secrets.
+  window.API_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/pharma/"
+  };
+</script>
 
   <script>
     /* Build today's date */
@@ -152,14 +158,13 @@
       window.API_CONFIG.API_URL +
       `list?status=IN_TRANSIT&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
 
-    const API_TOKEN = window.API_CONFIG.API_TOKEN;
-
+  
     // Fetch API data
     async function fetchInvoices() {
       try {
         const response = await fetch(API_URL, {
           headers: {
-            "Authorization": API_TOKEN,
+            
             "Content-Type": "application/json"
           }
         });
