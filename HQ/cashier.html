@@ -436,7 +436,7 @@
     const startDateStr = lookbackDate.toISOString().split('T')[0];
     const endDateStr = today.toISOString().split('T')[0];
 
-    const endpoint = currentCompany === "pharma" ? "cashier-clearance-reports" : "list-cashier-clearance-reports";
+    const endpoint = currentCompany === "pharma" ? "cashier-clearance-reports" : "order-tracking/list-cashier-clearance-reports";
     let url = `${config.API_URL}${endpoint}?pageSize=10000&startDate=${startDateStr}&endDate=${endDateStr}`;
 
      try {
