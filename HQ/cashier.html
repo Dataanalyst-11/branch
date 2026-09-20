@@ -5,9 +5,15 @@
 <title>Cashier Performance Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Load both configuration files -->
-<script src="config.js"></script>
-<script src="beibora.js"></script>
+<script>
+  // Proxy URLs only — real tokens live in the Cloudflare worker.
+  window.API_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/pharma/"
+  };
+  window.BEIBORA_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/beibora/"
+  };
+</script>
 
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -416,7 +422,7 @@
   // ==============================================================
   async function fetchAndCacheData() {
     const config = getActiveConfig();
-    if (!config || !config.API_URL || !config.API_TOKEN) return;
+    if (!config || !config.API_URL ) return;
 
     // Only show full loading spinner if cache is empty
     if (cachedData.length === 0) {
@@ -433,28 +439,25 @@
     const endpoint = currentCompany === "pharma" ? "cashier-clearance-reports" : "list-cashier-clearance-reports";
     let url = `${config.API_URL}${endpoint}?pageSize=10000&startDate=${startDateStr}&endDate=${endDateStr}`;
 
-    try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { "Authorization": config.API_TOKEN, "Content-Type": "application/json" }
-      });
+     try {
+    const response = await fetch(url);   // no headers — worker attaches the token
 
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      const json = await response.json();
-      
-      cachedData = Array.isArray(json) ? json : (json.data || []);
-      lastFetchTime = Date.now();
-      
-      console.log(`[${currentCompany}] Cache updated. Records: ${cachedData.length}`);
-      renderUI();
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const json = await response.json();
 
-    } catch (err) {
-      console.error(err);
-      if (cachedData.length === 0) {
-        document.getElementById("performanceBody").innerHTML = `<tr><td colspan="7" class="no-data-msg">Failed to load data. Check API configuration.</td></tr>`;
-      }
+    cachedData = Array.isArray(json) ? json : (json.data || []);
+    lastFetchTime = Date.now();
+
+    console.log(`[${currentCompany}] Cache updated. Records: ${cachedData.length}`);
+    renderUI();
+
+  } catch (err) {
+    console.error(err);
+    if (cachedData.length === 0) {
+      document.getElementById("performanceBody").innerHTML = `<tr><td colspan="7" class="no-data-msg">Failed to load data. Check API configuration.</td></tr>`;
     }
   }
+}
 
   // ==============================================================
   // UI RENDERING: Filters the cached data locally (Zero API calls)
