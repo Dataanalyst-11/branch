@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -152,8 +151,13 @@
    <div>Designed and Managed by MIS.DPT</div>
   </div>
 
-  <!-- Load the config first -->
-  <script src="config.js"></script>
+<script>
+  // Not a credential — proxy only accepts requests from this site's origin.
+  // The real API token lives ONLY in the Cloudflare worker's secrets.
+  window.API_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/pharma/"
+  };
+</script>
 
 <script>
 
@@ -181,10 +185,6 @@ let formattedStart = `${pastY}-${pastM}-${pastD}`;
 
 const API_URL = window.API_CONFIG.API_URL +
   `list?status=PENDING_DISPATCH&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formattedStart}&endDate=${formattedEnd}`;
-
-const API_TOKEN = window.API_CONFIG.API_TOKEN;
-
-
 
 // =============== TIMER UNDER CONFIRM TIME ===============
 function startElapsedTimer(timerId, timeObj) {
@@ -260,7 +260,7 @@ async function loadPerformanceData() {
   try {
     const response = await fetch(API_URL, {
       headers: {
-        "Authorization": API_TOKEN,
+       
         "Content-Type": "application/json"
       }
     });
