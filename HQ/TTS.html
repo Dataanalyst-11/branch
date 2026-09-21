@@ -127,8 +127,14 @@ thead th {
 Last updated: <span id="lastUpdated">--</span>
 <div>Designed and Managed by MIS.DPT</div>
 </div>
-
-<script src="config.js"></script>
+  
+<script>
+  // Not a credential — proxy only accepts requests from this site's origin.
+  // The real API token lives ONLY in the Cloudflare worker's secrets.
+  window.API_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/pharma/"
+  };
+</script>
 
 <script>
 /* ================= CONFIG ================= */
@@ -136,7 +142,6 @@ Last updated: <span id="lastUpdated">--</span>
 const API_URL = window.API_CONFIG.API_URL +
 `list?status=STORE_CHECKED_IN&orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${new Date().toISOString().split('T')[0]}`;
 
-const API_TOKEN = window.API_CONFIG.API_TOKEN;
 
 const tbody = document.querySelector("#invoiceTable tbody");
 const summaryEl = document.getElementById("summary");
@@ -262,9 +267,7 @@ function formatInvoiceForSpeech(inv) {
 
 async function fetchInvoices() {
   try {
-    const response = await fetch(API_URL, {
-      headers: { Authorization: API_TOKEN }
-    });
+    const response = await fetch(API_URL);
 
     if (!response.ok) throw new Error("API error");
 
