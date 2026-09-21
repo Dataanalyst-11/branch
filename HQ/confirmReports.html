@@ -92,8 +92,14 @@
     </table>
 </div>
 
-<script src="config.js"></script>
-
+<script>
+  // Not a credential — proxy only accepts requests from this site's origin.
+  // The real API token lives ONLY in the Cloudflare worker's secrets.
+  window.API_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/pharma/"
+  };
+</script>
+    
 <script>
 // ====== SAVE SCROLL POSITION & DIRECTION ======
 let savedScrollTop = 0;
@@ -109,7 +115,6 @@ let formatted = `${yyyy}-${mm}-${dd}`;
 
 const API_URL = window.API_CONFIG.API_URL +
   `order-confirmer-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${formatted}`;
-const API_TOKEN = window.API_CONFIG.API_TOKEN;
 
 // =============== SCORING FORMULA ===================
 function calculatePerformance(attendant) {
