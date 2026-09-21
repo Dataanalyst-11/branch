@@ -114,7 +114,13 @@
     <div>Designed and Managed by MIS.DPT</div>
 </div>
 
-<script src="config.js"></script>
+<script>
+  // Not a credential — proxy only accepts requests from this site's origin.
+  // The real API token lives ONLY in the Cloudflare worker's secrets.
+  window.API_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/pharma/"
+  };
+</script>
 
 <script>
 /* ================= CLOCK ================= */
@@ -137,7 +143,7 @@ const today = new Date().toISOString().split("T")[0];
 const API_URL =
     API_CONFIG.API_URL +
     `store-picker-reports?orgBranchId=orgbranch-683976e3994a072a600cbd7a&startDate=${today}`;
-const API_TOKEN = API_CONFIG.API_TOKEN;
+
 
 /* ================= PERCENTILE SCORING ================= */
 function calculatePercentilePerformance(attendants) {
@@ -224,7 +230,6 @@ async function loadPerformanceData() {
     try {
         const res = await fetch(API_URL, {
             headers: {
-                "Authorization": API_TOKEN,
                 "Content-Type": "application/json"
             }
         });
