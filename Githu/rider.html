@@ -154,8 +154,13 @@
     <div>Designed and Managed by MIS.DPT</div>
   </div>
 
-  <!-- External config -->
-  <script src="config.js"></script>
+<script>
+  // Not a credential — proxy only accepts requests from this site's origin.
+  // The real API token lives ONLY in the Cloudflare worker's secrets.
+  window.API_CONFIG = {
+    API_URL: "https://dashboard-proxy.mis-philmed01-dpt.workers.dev/pharma/"
+  };
+</script>
 
 <script>
 
@@ -169,9 +174,6 @@ let formatted = `${yyyy}-${mm}-${dd}`;
 
 const API_URL = window.API_CONFIG.API_URL +
   `/driver-dispatch-reports?orgBranchId=orgbranch-68458a4b76bd774c32f10527&startDate=${formatted}`;
-
-const API_TOKEN = window.API_CONFIG.API_TOKEN;
-
 
 // ===================== SUMMARY UPDATE =====================
 
@@ -225,7 +227,7 @@ async function loadPerformanceData() {
   try {
     const res = await fetch(API_URL, {
       headers: {
-        "Authorization": API_TOKEN,
+       
         "Content-Type": "application/json"
       }
     });
